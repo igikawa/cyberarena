@@ -1,10 +1,18 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <title>Title</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>{% block title %}WEB-01 · CYBERARENA{% endblock %}</title>
+    <style>
+        :root{color-scheme:dark;font:16px system-ui,sans-serif;background:#09111a;color:#eaf4f3}
+        body{margin:0}main{max-width:760px;margin:8vh auto;padding:24px}
+        p,li{color:#a4b7bf;line-height:1.7}a{color:#61e5b5}
+        code{color:#eaf4f3;background:#15232c;padding:.2em .4em;border-radius:4px}
+        .eyebrow{color:#61e5b5;text-transform:uppercase;letter-spacing:.15em;font-size:.8rem}
+        .panel{padding:20px;background:#101d27;border:1px solid #263b46;border-radius:12px}
+    </style>
 </head>
-<body>
-
-</body>
+<body><main>{% block content %}{% endblock %}</main></body>
 </html>

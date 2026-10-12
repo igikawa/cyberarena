@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Задания · Администрирование{% endblock %}
+{% block content %}
+<div class="heading-row"><div><p class="eyebrow">Управление контентом</p><h1>Все задания</h1></div><a class="button" href="/admin/challenges/new">+ Создать задание</a></div>
+<div class="table-wrap"><table><thead><tr><th>Задание</th><th>Категория</th><th>Баллы</th><th>Статус</th><th>Действия</th></tr></thead><tbody>
+{% for challenge in challenges %}<tr><td><strong>{{ challenge.title }}</strong></td><td>{{ challenge.category }}</td><td class="points">{{ challenge.points }}</td><td><span class="status {{ 'status-live' if challenge.is_published else 'status-hidden' }}">{{ "Опубликовано" if challenge.is_published else "Скрыто" }}</span></td><td><div class="inline-actions"><a href="/admin/challenges/{{ challenge.id }}/edit">Изменить</a>
+<form method="post" action="/admin/challenges/{{ challenge.id }}/{{ 'unpublish' if challenge.is_published else 'publish' }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="text-button">{{ "Снять" if challenge.is_published else "Опубликовать" }}</button></form>
+<form method="post" action="/admin/challenges/{{ challenge.id }}/delete" onsubmit="return confirm('Удалить это задание?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="text-button danger-text">Удалить</button></form></div></td></tr>{% else %}<tr><td colspan="5" class="empty-cell">Заданий пока нет.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

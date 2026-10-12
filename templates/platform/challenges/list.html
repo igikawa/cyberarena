@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Задания · CYBERARENA{% endblock %}
+{% block content %}
+<section class="hero">
+    <p class="eyebrow">Практика начинается здесь</p>
+    <h1>CTF-задания</h1>
+    <p class="lede">Исследуйте задачи, находите флаги и поднимайтесь в рейтинге.</p>
+</section>
+{% if challenges %}
+<div class="challenge-grid">
+    {% for challenge in challenges %}
+    <a class="challenge-card" href="/challenges/{{ challenge.id }}">
+        <div class="card-top"><span class="tag">{{ challenge.category }}</span><span class="points">{{ challenge.points }} pts</span></div>
+        <h2>{{ challenge.title }}</h2>
+        <p>{{ challenge.description|truncate(150) }}</p>
+        <div class="card-bottom"><span>{{ "Решено" if challenge.is_solved else "Открыто" }}</span><span class="arrow">↗</span></div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state"><h2>Заданий пока нет</h2><p>Загляните позже — новые испытания скоро появятся.</p></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Профиль · CYBERARENA{% endblock %}
+{% block content %}
+<section class="page-heading"><p class="eyebrow">Участник платформы</p><h1>{{ profile.username }}</h1><p class="muted">В команде с {{ profile.created_at.strftime("%Y-%m-%d") }}</p></section>
+<section class="panel"><h2>Решённые задания</h2>
+{% if solves %}<div class="table-wrap"><table><thead><tr><th>Задание</th><th>Баллы</th><th>Решено</th></tr></thead><tbody>
+{% for solve, challenge in solves %}<tr><td>{{ challenge.title }}</td><td class="points">{{ challenge.points }}</td><td class="muted">{{ solve.solved_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}<p class="muted">Решения появятся здесь после первого флага.</p>{% endif %}
+</section>
+{% endblock %}

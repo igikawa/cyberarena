@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ "Новое задание" if not challenge else "Изменить задание" }} · CYBERARENA{% endblock %}
+{% block content %}
+<a class="back-link" href="/admin/challenges">← Все задания</a><section class="panel form-panel">
+<p class="eyebrow">Администрирование</p><h1>{{ "Новое задание" if not challenge else "Изменить задание" }}</h1>
+<form method="post" action="{{ '/admin/challenges' if not challenge else '/admin/challenges/' ~ challenge.id ~ '/edit' }}" class="stack-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label>Название<input name="title" maxlength="120" required value="{{ challenge.title if challenge else '' }}"></label>
+<label>Категория<input name="category" maxlength="40" required value="{{ challenge.category if challenge else '' }}"></label>
+<label>Условие<textarea name="description" rows="7" maxlength="10000" required>{{ challenge.description if challenge else '' }}</textarea></label>
+<label>Баллы<input name="points" type="number" min="1" max="100000" required value="{{ challenge.points if challenge else 100 }}"></label>
+<label>Правильный флаг{% if challenge %}<small>Оставьте пустым, чтобы не менять текущий.</small>{% endif %}<input name="flag" maxlength="256" {{ "required" if not challenge else "" }} autocomplete="off"></label>
+<label>Ссылка на лабораторию или ресурс<input name="resource_url" maxlength="500" value="{{ challenge.resource_url or '' if challenge else '' }}" placeholder="/lab/"></label>
+<label class="check-label"><input name="is_published" type="checkbox" {{ "checked" if challenge and challenge.is_published else "" }}> Опубликовано</label>
+<button class="button" type="submit">Сохранить</button>
+</form></section>
+{% endblock %}
