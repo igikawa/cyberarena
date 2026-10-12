@@ -1,0 +1,122 @@
+name: cyberarena
+
+services:
+  nginx:
+    image: nginx:stable-alpine
+    ports:
+      # Доступ только с локального компьютера, как требует кейс.
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      app:
+        condition: service_healthy
+      # Не блокируем запуск платформы, если лаборатория недоступна.
+      lab-web:
+        condition: service_started
+    networks:
+      - app-net
+      - lab-net
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:size=16m,noexec,nosuid,nodev
+      - /var/run:size=1m,noexec,nosuid,nodev
+      - /tmp:size=8m,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: 0.50
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  app:
+    build:
+      context: ./platform
+      # Путь к Dockerfile платформы намеренно не задан.
+      # После согласования структуры можно добавить, например: dockerfile: path/to/Dockerfile
+    environment:
+      DATABASE_URL: sqlite:////data/cyberarena.db
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?Укажите APP_SECRET_KEY в файле .env}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Укажите ADMIN_PASSWORD в файле .env}
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      # SQLite — встроенная БД в виде файла, а не отдельный серверный контейнер.
+      # Том доступен только основному приложению, но не Web-лаборатории.
+      - sqlite-data:/data
+    networks:
+      - app-net
+    restart: unless-stopped
+    init: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    cpus: 1.00
+    pids_limit: 128
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"
+      interval: 20s
+      timeout: 4s
+      retries: 5
+      start_period: 20s
+
+  lab-web:
+    build:
+      context: ./lab
+      # Путь к Dockerfile лаборатории намеренно не задан.
+      # После согласования структуры можно добавить, например: dockerfile: path/to/Dockerfile
+    expose:
+      - "8000"
+    networks:
+      # ВАЖНО: лаборатория подключена только к lab-net; app-net и SQLite ей недоступны.
+      - lab-net
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 64
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  sqlite-data:
+    name: cyberarena-sqlite-data
+
+networks:
+  # Внутренние сети без прямого выхода в интернет.
+  app-net:
+    internal: true
+  lab-net:
+    internal: true
