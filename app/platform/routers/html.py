@@ -1,5 +1,7 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -8,11 +10,23 @@ from pydantic import ValidationError
 
 from app.platform.core.config import get_settings
 from app.platform.core.security import hash_session_token, new_csrf_token
-from app.platform.dependencies import admin_user, current_user, optional_user, require_csrf, session_context
+from app.platform.dependencies import (
+    admin_user,
+    current_user,
+    optional_user,
+    password_change_admin,
+    require_csrf,
+    session_context,
+)
 from app.platform.models import AuthSession, Challenge, Solve, Submission, User
 from app.platform.routers.auth import user_view
-from app.platform.schemas import ChallengeInput, ChallengePatch, Credentials
-from app.platform.services.auth import UsernameUnavailable, authenticate_user, register_user
+from app.platform.schemas import AdminPasswordChange, ChallengeInput, ChallengePatch, Credentials
+from app.platform.services.auth import (
+    UsernameUnavailable,
+    authenticate_user,
+    change_admin_password,
+    register_user,
+)
 from app.platform.services.challenges import (
     create_challenge as create_challenge_record,
     delete_challenge as delete_challenge_record,
@@ -23,6 +37,7 @@ from app.platform.services.challenges import (
 )
 from app.platform.services.scoreboard import get_scoreboard
 from app.platform.services.sessions import create_session, delete_session
+from app.platform.services.task_materials import get_seeded_flag
 from app.platform.storage import get_db
 
 router = APIRouter()
@@ -82,9 +97,39 @@ async def home() -> RedirectResponse:
 
 
 @router.get("/tasks/crypto01/download", include_in_schema=False)
-async def crypto_download() -> FileResponse:
-    path = get_settings().static_dir / "tasks" / "crypto01" / "ciphertext.txt"
-    return FileResponse(path, media_type="text/plain; charset=utf-8", filename="crypto01-ciphertext.txt")
+async def crypto_download(db: AsyncSession = Depends(get_db)) -> Response:
+    flag = await get_seeded_flag(db, "crypto-01")
+    ciphertext = "".join(
+        chr((ord(char) - ord("A" if char.isupper() else "a") + 3) % 26 + ord("A" if char.isupper() else "a"))
+        if char.isascii() and char.isalpha()
+        else char
+        for char in flag
+    )
+    return Response(
+        f"Задание CRYPTO-01\nАлгоритм: шифр Цезаря, сдвиг на 3 символа вперёд для латинских букв.\n"
+        f"Пробелы, скобки и подчёркивания не менялись.\n\nCiphertext: {ciphertext}\n",
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'attachment; filename="crypto01-ciphertext.txt"',
+        },
+    )
+
+
+@router.get("/static/tasks/web02/clue.js", include_in_schema=False)
+async def web02_clue(db: AsyncSession = Depends(get_db)) -> Response:
+    flag = await get_seeded_flag(db, "web-02")
+    script = (
+        'document.getElementById("hint").textContent = '
+        '"Подсказка: ответ ищите в исходном коде подключённого файла.";\n'
+        f"const pageNote = {json.dumps(flag)};\n"
+        'console.info("Проверочная метка для учебной задачи:", pageNote);\n'
+    )
+    return Response(
+        script,
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/login")
@@ -102,10 +147,15 @@ async def login_form(request: Request, response: Response, db: AsyncSession = De
     user = await authenticate_user(db, credentials)
     if user is None:
         return await render(request, "auth/login.html", {"error": "Неверный логин или пароль."}, 401, db)
-    response = RedirectResponse("/challenges", status_code=303)
+    must_change_password = user.is_admin and user.must_change_password
+    response = RedirectResponse(
+        "/admin/change-password" if must_change_password else "/challenges",
+        status_code=303,
+    )
     auth_session = await create_session(db, response, user, request.cookies.get("cyberarena_csrf"))
-    set_flash(auth_session, "Вы вошли в аккаунт.")
-    await db.commit()
+    if not must_change_password:
+        set_flash(auth_session, "Вы вошли в аккаунт.")
+        await db.commit()
     return response
 
 
@@ -223,6 +273,49 @@ async def admin_dashboard(request: Request, _: User = Depends(admin_user), db: A
         "solves": await db.scalar(select(func.count(Solve.id))),
     }
     return await render(request, "admin/dashboard.html", {"counts": counts}, db=db)
+
+
+@router.get("/admin/change-password")
+async def admin_change_password_page(
+    request: Request,
+    _: tuple[User, AuthSession] = Depends(password_change_admin),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    return await render(request, "admin/change_password.html", db=db)
+
+
+@router.post("/admin/change-password", dependencies=[Depends(require_csrf)])
+async def admin_change_password_form(
+    request: Request,
+    context: tuple[User, AuthSession] = Depends(password_change_admin),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    user, auth_session = context
+    try:
+        data = AdminPasswordChange.model_validate(await form_values(request))
+    except ValidationError:
+        return await render(
+            request,
+            "admin/change_password.html",
+            {"error": "Проверьте текущий пароль и убедитесь, что новый пароль введён одинаково."},
+            422,
+            db,
+        )
+    try:
+        await change_admin_password(
+            db, user, auth_session, data.current_password, data.new_password
+        )
+    except ValueError:
+        return await render(
+            request,
+            "admin/change_password.html",
+            {"error": "Текущий пароль указан неверно."},
+            400,
+            db,
+        )
+    set_flash(auth_session, "Пароль администратора изменён.")
+    await db.commit()
+    return RedirectResponse("/admin", status_code=303)
 
 
 @router.get("/admin/challenges")

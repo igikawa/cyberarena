@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
 EXTERNAL_TEST_DATABASE_URL = os.getenv("CYBERARENA_TEST_DATABASE_URL")
+TEST_ADMIN_NEW_PASSWORD = "testing-admin-password-after-change"
 if EXTERNAL_TEST_DATABASE_URL:
     database_name = EXTERNAL_TEST_DATABASE_URL.split("?", 1)[0].rsplit("/", 1)[-1]
     if not EXTERNAL_TEST_DATABASE_URL.startswith("postgresql+asyncpg://") or not database_name.startswith("cyberarena_test"):
@@ -64,6 +65,17 @@ def admin_client(client: TestClient) -> TestClient:
         headers={"X-CSRF-Token": token},
     )
     assert response.status_code == 200
+    if response.json()["user"]["must_change_password"]:
+        changed = client.post(
+            "/api/auth/admin/change-password",
+            json={
+                "current_password": os.environ["ADMIN_PASSWORD"],
+                "new_password": TEST_ADMIN_NEW_PASSWORD,
+                "confirm_password": TEST_ADMIN_NEW_PASSWORD,
+            },
+            headers={"X-CSRF-Token": csrf(client)},
+        )
+        assert changed.status_code == 200, changed.text
     return client
 
 

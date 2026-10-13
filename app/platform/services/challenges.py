@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.platform.core.security import hash_flag, verify_flag
+from app.platform.core.security import encrypt_flag, hash_flag, verify_flag
 from app.platform.models import Challenge, DeletedChallengeSeed, Solve, Submission, User
 from app.platform.schemas import ChallengeInput, ChallengePatch, validate_flag_value
 
@@ -26,6 +26,7 @@ async def create_challenge(db: AsyncSession, data: ChallengeInput) -> Challenge:
         description=data.description.strip(),
         points=data.points,
         flag_hash=hash_flag(data.flag),
+        flag_encrypted=encrypt_flag(data.flag),
         is_published=data.is_published,
         resource_url=data.resource_url,
     )
@@ -44,8 +45,13 @@ async def update_challenge(db: AsyncSession, challenge: Challenge, data: Challen
         setattr(challenge, key, value.strip() if isinstance(value, str) and key != "resource_url" else value)
     if flag:
         challenge.flag_hash = hash_flag(flag)
+        challenge.flag_encrypted = encrypt_flag(flag)
     await db.commit()
     await db.refresh(challenge)
+    if flag and challenge.seed_key == "web-01":
+        from app.platform.services.task_materials import refresh_lab_flags
+
+        await refresh_lab_flags(db)
     return challenge
 
 
@@ -60,6 +66,10 @@ async def delete_challenge(db: AsyncSession, challenge: Challenge) -> None:
         db.add(DeletedChallengeSeed(seed_key=challenge.seed_key))
     await db.delete(challenge)
     await db.commit()
+    if challenge.seed_key == "web-01":
+        from app.platform.services.task_materials import refresh_lab_flags
+
+        await refresh_lab_flags(db)
 
 
 def public_challenge(challenge: Challenge, solved: bool = False) -> dict:

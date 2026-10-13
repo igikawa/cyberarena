@@ -35,7 +35,20 @@ async def current_user(
     user, _ = context
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    if user.must_change_password:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator password change required")
     return user
+
+
+async def password_change_admin(
+    context: tuple[User | None, AuthSession | None] = Depends(session_context),
+) -> tuple[User, AuthSession]:
+    user, auth_session = context
+    if user is None or auth_session is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    if not user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator access required")
+    return user, auth_session
 
 
 async def optional_user(

@@ -1,10 +1,14 @@
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.platform.core.security import hash_password
+from app.platform.core.security import encrypt_flag, hash_flag, hash_password
 from app.platform.models import Challenge, DeletedChallengeSeed, User
 from app.platform.schemas import ChallengeInput
 from app.platform.services.challenges import create_challenge
+
+logger = logging.getLogger(__name__)
 
 
 SEED_CHALLENGES = (
@@ -41,7 +45,14 @@ SEED_CHALLENGES = (
 async def ensure_admin(session: AsyncSession, username: str, password: str) -> None:
     existing = await session.scalar(select(User).where(User.username == username))
     if existing is None:
-        session.add(User(username=username, password_hash=hash_password(password), is_admin=True))
+        session.add(
+            User(
+                username=username,
+                password_hash=hash_password(password),
+                is_admin=True,
+                must_change_password=True,
+            )
+        )
         await session.commit()
     elif not existing.is_admin:
         raise RuntimeError("ADMIN_USERNAME is already assigned to a non-admin account")
@@ -69,4 +80,13 @@ async def seed_challenges(session: AsyncSession) -> None:
                 ),
             )
             challenge.seed_key = values["seed_key"]
+            await session.commit()
+        elif existing.flag_encrypted is None:
+            logger.warning(
+                "Challenge %s had no recoverable plaintext flag; restoring its bundled answer. "
+                "Reapply any custom flag after this upgrade.",
+                values["seed_key"],
+            )
+            existing.flag_hash = hash_flag(values["flag"])
+            existing.flag_encrypted = encrypt_flag(values["flag"])
             await session.commit()

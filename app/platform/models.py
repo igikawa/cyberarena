@@ -20,6 +20,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(32))
     password_hash: Mapped[str] = mapped_column(String(255))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, server_default=func.now())
 
 
@@ -36,6 +37,7 @@ class Challenge(Base):
     description: Mapped[str] = mapped_column(Text)
     points: Mapped[int] = mapped_column(Integer)
     flag_hash: Mapped[str] = mapped_column(String(64))
+    flag_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
     seed_key: Mapped[str | None] = mapped_column(String(40), nullable=True)
     is_published: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", index=True)
     resource_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

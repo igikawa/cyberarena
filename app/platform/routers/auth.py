@@ -3,10 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.platform.core.config import get_settings
 from app.platform.core.security import new_csrf_token
-from app.platform.dependencies import current_user, require_csrf
-from app.platform.models import User
-from app.platform.schemas import Credentials
-from app.platform.services.auth import UsernameUnavailable, authenticate_user, register_user
+from app.platform.dependencies import current_user, password_change_admin, require_csrf
+from app.platform.models import AuthSession, User
+from app.platform.schemas import AdminPasswordChange, Credentials
+from app.platform.services.auth import UsernameUnavailable, authenticate_user, change_admin_password, register_user
 from app.platform.services.sessions import create_session, delete_session
 from app.platform.storage import get_db
 
@@ -14,7 +14,13 @@ router = APIRouter()
 
 
 def user_view(user: User) -> dict:
-    return {"id": user.id, "username": user.username, "is_admin": user.is_admin, "created_at": user.created_at}
+    return {
+        "id": user.id,
+        "username": user.username,
+        "is_admin": user.is_admin,
+        "must_change_password": user.must_change_password,
+        "created_at": user.created_at,
+    }
 
 
 @router.get("/api/auth/csrf")
@@ -65,6 +71,22 @@ async def login(
 async def logout(request: Request, response: Response, db: AsyncSession = Depends(get_db)) -> dict:
     await delete_session(db, request, response)
     return {"status": "logged_out"}
+
+
+@router.post("/api/auth/admin/change-password", dependencies=[Depends(require_csrf)])
+async def change_admin_password_api(
+    data: AdminPasswordChange,
+    context: tuple[User, AuthSession] = Depends(password_change_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    user, auth_session = context
+    try:
+        await change_admin_password(
+            db, user, auth_session, data.current_password, data.new_password
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {"status": "password_changed"}
 
 
 @router.get("/api/users/me")

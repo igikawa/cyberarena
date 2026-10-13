@@ -8,7 +8,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.lab.main import app as lab_app
 from app.platform.models import DeletedChallengeSeed
 from app.platform.services.scoreboard import get_scoreboard
-from tests.conftest import TEST_DATABASE_URL, admin_client, create_challenge, csrf, register
+from tests.conftest import (
+    TEST_ADMIN_NEW_PASSWORD,
+    TEST_DATABASE_URL,
+    admin_client,
+    create_challenge,
+    csrf,
+    register,
+)
 
 
 def test_registration_and_duplicate_username(client: TestClient):
@@ -34,6 +41,56 @@ def test_login_success_and_failure(client: TestClient):
         headers={"X-CSRF-Token": csrf(client)},
     )
     assert response.status_code == 401
+
+
+def test_admin_must_change_initial_password_before_using_platform(client: TestClient):
+    login = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": os.environ["ADMIN_PASSWORD"]},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    assert login.status_code == 200
+    assert login.json()["user"]["must_change_password"] is True
+    assert client.get("/api/admin/challenges").status_code == 403
+
+    mismatch = client.post(
+        "/api/auth/admin/change-password",
+        json={
+            "current_password": os.environ["ADMIN_PASSWORD"],
+            "new_password": TEST_ADMIN_NEW_PASSWORD,
+            "confirm_password": "different-password",
+        },
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    assert mismatch.status_code == 422
+
+    changed = client.post(
+        "/api/auth/admin/change-password",
+        json={
+            "current_password": os.environ["ADMIN_PASSWORD"],
+            "new_password": TEST_ADMIN_NEW_PASSWORD,
+            "confirm_password": TEST_ADMIN_NEW_PASSWORD,
+        },
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    assert changed.status_code == 200
+    assert client.get("/api/admin/challenges").status_code == 200
+    assert client.get("/api/users/me").json()["must_change_password"] is False
+
+    client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf(client)})
+    old_login = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": os.environ["ADMIN_PASSWORD"]},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    assert old_login.status_code == 401
+    new_login = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": TEST_ADMIN_NEW_PASSWORD},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    assert new_login.status_code == 200
+    assert new_login.json()["user"]["must_change_password"] is False
 
 
 def test_admin_api_denies_regular_user(client: TestClient):
@@ -235,6 +292,21 @@ def test_admin_can_login_with_html_form(client: TestClient):
         follow_redirects=False,
     )
     assert response.status_code == 303
+    assert response.headers["location"] == "/admin/change-password"
+    password_page = client.get(response.headers["location"])
+    assert password_page.status_code == 200
+    changed = client.post(
+        "/admin/change-password",
+        data={
+            "csrf_token": csrf(client),
+            "current_password": os.environ["ADMIN_PASSWORD"],
+            "new_password": TEST_ADMIN_NEW_PASSWORD,
+            "confirm_password": TEST_ADMIN_NEW_PASSWORD,
+        },
+        follow_redirects=False,
+    )
+    assert changed.status_code == 303
+    assert changed.headers["location"] == "/admin"
     assert client.get("/admin").status_code == 200
 
 
@@ -249,6 +321,7 @@ def test_seeded_challenges_and_local_resources(client: TestClient):
     web02 = client.get("/static/tasks/web02/index.html")
     script = client.get("/static/tasks/web02/clue.js")
     assert web02.status_code == script.status_code == 200
+    assert "/static/tasks/web02/clue.js" in web02.text
     assert "CTF{source_maps_are_not_needed}" in script.text
     crypto = client.get("/tasks/crypto01/download")
     assert crypto.status_code == 200
@@ -256,7 +329,77 @@ def test_seeded_challenges_and_local_resources(client: TestClient):
     assert "FWI{fdhvdu_vkliw_lv_ixq}" in crypto.text
 
 
-def test_isolated_web_lab_idor_and_allowlisted_documents():
+def test_rotating_seed_flags_updates_task_materials_and_validation(client: TestClient):
+    admin_client(client)
+    challenges = client.get("/api/admin/challenges").json()
+    seeded = {
+        challenge["resource_url"]: challenge["id"]
+        for challenge in challenges
+        if challenge["resource_url"] in {
+            "/lab/",
+            "/static/tasks/web02/index.html",
+            "/tasks/crypto01/download",
+        }
+    }
+    new_flags = {
+        "/lab/": "CTF{web01_rotated_answer}",
+        "/static/tasks/web02/index.html": "CTF{web02_rotated_answer}",
+        "/tasks/crypto01/download": "CTF{crypto_rotated_answer}",
+    }
+    old_flags = {
+        "/lab/": "CTF{idor_hidden_document}",
+        "/static/tasks/web02/index.html": "CTF{source_maps_are_not_needed}",
+        "/tasks/crypto01/download": "CTF{caesar_shift_is_fun}",
+    }
+    assert set(seeded) == set(new_flags)
+    for resource_url, flag in new_flags.items():
+        response = client.patch(
+            f"/api/admin/challenges/{seeded[resource_url]}",
+            json={"flag": flag},
+            headers={"X-CSRF-Token": csrf(client)},
+        )
+        assert response.status_code == 200, response.text
+
+    with TestClient(lab_app) as lab:
+        web01_document = lab.get("/documents/1002").text
+        assert new_flags["/lab/"] in web01_document
+        assert old_flags["/lab/"] not in web01_document
+
+    web02_page = client.get("/static/tasks/web02/index.html")
+    web02_script = client.get("/static/tasks/web02/clue.js")
+    assert "/static/tasks/web02/clue.js" in web02_page.text
+    assert new_flags["/static/tasks/web02/index.html"] in web02_script.text
+    assert old_flags["/static/tasks/web02/index.html"] not in web02_script.text
+
+    crypto_text = client.get("/tasks/crypto01/download").text
+    encoded_flag = crypto_text.split("Ciphertext: ", 1)[1].strip()
+    decoded_flag = "".join(
+        chr((ord(char) - ord("A" if char.isupper() else "a") - 3) % 26 + ord("A" if char.isupper() else "a"))
+        if char.isascii() and char.isalpha()
+        else char
+        for char in encoded_flag
+    )
+    assert decoded_flag == new_flags["/tasks/crypto01/download"]
+    assert decoded_flag != old_flags["/tasks/crypto01/download"]
+
+    for resource_url, flag in new_flags.items():
+        old_response = client.post(
+            f"/api/challenges/{seeded[resource_url]}/submit",
+            json={"flag": old_flags[resource_url]},
+            headers={"X-CSRF-Token": csrf(client)},
+        )
+        assert old_response.status_code == 200
+        assert old_response.json()["is_correct"] is False
+        response = client.post(
+            f"/api/challenges/{seeded[resource_url]}/submit",
+            json={"flag": flag},
+            headers={"X-CSRF-Token": csrf(client)},
+        )
+        assert response.status_code == 200
+        assert response.json()["is_correct"] is True
+
+
+def test_isolated_web_lab_idor_and_allowlisted_documents(client: TestClient):
     with TestClient(lab_app) as lab:
         assert lab.get("/").status_code == 200
         assert lab.get("/documents/1001").status_code == 200
@@ -325,7 +468,7 @@ def test_admin_html_lifecycle_and_tournament_reset(client: TestClient):
     token = csrf(client)
     assert client.post(
         "/api/auth/login",
-        json={"username": "admin", "password": os.environ["ADMIN_PASSWORD"]},
+        json={"username": "admin", "password": TEST_ADMIN_NEW_PASSWORD},
         headers={"X-CSRF-Token": token},
     ).status_code == 200
     assert client.get("/api/scoreboard").json()[0]["score"] == 81

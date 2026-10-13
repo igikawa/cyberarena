@@ -12,6 +12,7 @@ class Settings:
     database_url: str
     secret_key: str
     flag_hmac_key: str
+    lab_flags_file: Path
     admin_username: str | None
     admin_password: str | None
     secure_cookies: bool
@@ -43,6 +44,7 @@ def get_settings() -> Settings:
         database_url=database_url,
         secret_key=secret_key,
         flag_hmac_key=flag_hmac_key,
+        lab_flags_file=Path(os.getenv("LAB_FLAGS_FILE", "/tmp/cyberarena-lab-flags.json")),
         admin_username=admin_username,
         admin_password=admin_password,
         secure_cookies=os.getenv("COOKIE_SECURE", "false").lower() == "true",

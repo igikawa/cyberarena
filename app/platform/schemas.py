@@ -20,6 +20,20 @@ class Credentials(BaseModel):
     password: Password
 
 
+class AdminPasswordChange(BaseModel):
+    current_password: Password
+    new_password: Password
+    confirm_password: Password
+
+    @model_validator(mode="after")
+    def new_passwords_must_match(self) -> "AdminPasswordChange":
+        if self.new_password != self.confirm_password:
+            raise ValueError("New passwords do not match")
+        if self.new_password == self.current_password:
+            raise ValueError("New password must differ from the current password")
+        return self
+
+
 class FlagSubmission(BaseModel):
     flag: Flag
 
