@@ -5,14 +5,12 @@ services:
     image: nginx:stable-alpine
     user: "101:101"
     ports:
-      # Доступ только с локального компьютера.
       - "127.0.0.1:8080:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       app:
         condition: service_healthy
-      # Не блокируем запуск платформы, если лаборатория недоступна.
       lab-web:
         condition: service_started
     networks:
@@ -45,13 +43,13 @@ services:
       context: .
       dockerfile: docker/platform/Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cyberarena}:${POSTGRES_PASSWORD:?Укажите POSTGRES_PASSWORD в файле .env}@db:5432/${POSTGRES_DB:-cyberarena}
-      SECRET_KEY: ${SECRET_KEY:?Укажите SECRET_KEY в файле .env}
-      FLAG_HMAC_KEY: ${FLAG_HMAC_KEY:?Укажите FLAG_HMAC_KEY в файле .env}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      SECRET_KEY: ${SECRET_KEY}
+      FLAG_HMAC_KEY: ${FLAG_HMAC_KEY}
       LAB_FLAGS_FILE: /run/cyberarena/lab-flags/flags.json
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Укажите ADMIN_PASSWORD в файле .env}
+      COOKIE_SECURE: ${COOKIE_SECURE}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
     networks:
@@ -88,7 +86,6 @@ services:
     expose:
       - "8000"
     networks:
-      # ВАЖНО: лаборатория подключена только к lab-net; app-net и SQLite ей недоступны.
       lab-net:
         ipv4_address: 172.30.254.10
     environment:
@@ -122,9 +119,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-cyberarena}
-      POSTGRES_USER: ${POSTGRES_USER:-cyberarena}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Укажите POSTGRES_PASSWORD в файле .env}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
@@ -141,6 +138,49 @@ services:
     mem_limit: 512m
     cpus: 1.00
 
+  redis:
+    image: redis:latest
+    container_name: redis_container
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_USER: ${REDIS_USER}
+      REDIS_USER_PASSWORD: ${REDIS_USER_PASSWORD}
+    # TODO: Remove ports in production start
+    ports:
+      - "6380:6379"
+    volumes:
+      - ./redisdata:/data
+    networks:
+      - app-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    command: >
+      sh -c '
+        mkdir -p /usr/local/etc/redis &&
+        echo "bind 0.0.0.0" > /usr/local/etc/redis/redis.conf &&
+        echo "requirepass ${REDIS_PASSWORD}" >> /usr/local/etc/redis/redis.conf &&
+        echo "appendonly yes" >> /usr/local/etc/redis/redis.conf &&
+        echo "appendfsync everysec" >> /usr/local/etc/redis/redis.conf &&
+        echo "user default on nopass ~* +@all" > /usr/local/etc/redis/users.acl &&
+        echo "user ${REDIS_USER} on >${REDIS_USER_PASSWORD} ~* +@all" >> /usr/local/etc/redis/users.acl &&
+        redis-server /usr/local/etc/redis/redis.conf --aclfile /usr/local/etc/redis/users.acl
+      '
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "$REDIS_PASSWORD", "ping" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+
+
 volumes:
   postgres-data:
     name: cyberarena-postgres-data
@@ -148,13 +188,10 @@ volumes:
     name: cyberarena-lab-flags
 
 networks:
-  # Публикация порта Docker требует обычную bridge-сеть; masquerading для неё выключен.
-  # В эту сеть подключён только Nginx.
   edge-net:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "false"
-  # Внутренние сети без прямого выхода в интернет.
   app-net:
     internal: true
   lab-net:

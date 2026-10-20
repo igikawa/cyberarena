@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import Depends, FastAPI
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.platform.core.config import get_settings
+from app.platform.dependencies import admin_user
 from app.platform.routers import admin, auth, challenges, html, scoreboard
 from app.platform.services.bootstrap import ensure_admin, seed_challenges
 from app.platform.services.task_materials import refresh_lab_flags
@@ -28,13 +30,31 @@ async def lifespan(_: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title="CYBERARENA", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(
+        title="CYBERARENA",
+        version="1.0.0",
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
     app.include_router(auth.router)
     app.include_router(challenges.router)
     app.include_router(scoreboard.router)
     app.include_router(admin.router)
     app.include_router(html.router)
     app.mount("/static", StaticFiles(directory=settings.static_dir), name="static")
+
+    @app.get("/openapi.json", include_in_schema=False, dependencies=[Depends(admin_user)])
+    async def openapi_schema() -> JSONResponse:
+        return JSONResponse(app.openapi())
+
+    @app.get("/docs", include_in_schema=False, dependencies=[Depends(admin_user)])
+    async def swagger_docs() -> HTMLResponse:
+        return get_swagger_ui_html(
+            openapi_url="/openapi.json",
+            title=f"{app.title} - Swagger UI",
+        )
 
 
     @app.get("/health", include_in_schema=False)

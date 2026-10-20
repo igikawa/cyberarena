@@ -39,6 +39,33 @@ SEED_CHALLENGES = (
         "flag": "CTF{caesar_shift_is_fun}",
         "resource_url": "/tasks/crypto01/download",
     },
+    {
+        "seed_key": "web-03-sqli",
+        "title": "WEB-03 — Архив сотрудников",
+        "category": "Web",
+        "description": "В учебном каталоге сотрудников найдите способ обойти фильтр поиска и получить запись, не отображаемую при обычном поиске. Флаг хранится только в синтетической локальной базе лаборатории.",
+        "points": 200,
+        "flag": "CTF{union_of_synthetic_records}",
+        "resource_url": "/lab/sql/",
+    },
+    {
+        "seed_key": "web-04-path-traversal",
+        "title": "WEB-04 — За пределами папки",
+        "category": "Web",
+        "description": "Файловый просмотрщик предназначен для публичной папки. Исследуйте обработку пути и найдите виртуальный закрытый файл с флагом. Лаборатория не читает настоящие файлы контейнера.",
+        "points": 200,
+        "flag": "CTF{virtual_paths_only}",
+        "resource_url": "/lab/files/",
+    },
+    {
+        "seed_key": "business-01",
+        "title": "BIZ-01 — Магазин с ошибкой",
+        "category": "Business Logic",
+        "description": "В учебном магазине есть товар дороже баланса пользователя. Найдите ошибку проверки бизнес-логики, которая позволяет оформить заказ и получить флаг. Все цены и баланс вымышленные и сбрасываются при каждом запросе.",
+        "points": 200,
+        "flag": "CTF{negative_quantity_credit}",
+        "resource_url": "/lab/shop/",
+    },
 )
 
 

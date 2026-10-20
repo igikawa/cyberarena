@@ -48,7 +48,7 @@ async def update_challenge(db: AsyncSession, challenge: Challenge, data: Challen
         challenge.flag_encrypted = encrypt_flag(flag)
     await db.commit()
     await db.refresh(challenge)
-    if flag and challenge.seed_key == "web-01":
+    if flag and challenge.seed_key in {"web-01", "web-03-sqli", "web-04-path-traversal", "business-01"}:
         from app.platform.services.task_materials import refresh_lab_flags
 
         await refresh_lab_flags(db)
@@ -66,7 +66,7 @@ async def delete_challenge(db: AsyncSession, challenge: Challenge) -> None:
         db.add(DeletedChallengeSeed(seed_key=challenge.seed_key))
     await db.delete(challenge)
     await db.commit()
-    if challenge.seed_key == "web-01":
+    if challenge.seed_key in {"web-01", "web-03-sqli", "web-04-path-traversal", "business-01"}:
         from app.platform.services.task_materials import refresh_lab_flags
 
         await refresh_lab_flags(db)

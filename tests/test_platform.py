@@ -1,11 +1,14 @@
+import json
 import os
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.lab.main import app as lab_app
+from app.platform.main import app as platform_app
 from app.platform.models import DeletedChallengeSeed
 from app.platform.services.scoreboard import get_scoreboard
 from tests.conftest import (
@@ -97,6 +100,29 @@ def test_admin_api_denies_regular_user(client: TestClient):
     register(client)
     response = client.get("/api/admin/challenges")
     assert response.status_code == 403
+
+
+def test_openapi_docs_are_admin_only(client: TestClient):
+    assert client.get("/docs").status_code == 401
+    assert client.get("/openapi.json").status_code == 401
+
+    register(client, "docsstudent")
+    assert client.get("/docs").status_code == 403
+    assert client.get("/openapi.json").status_code == 403
+
+    client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf(client)})
+    admin_client(client)
+    docs = client.get("/docs")
+    schema = client.get("/openapi.json")
+    assert docs.status_code == 200
+    assert "/openapi.json" in docs.text
+    assert schema.status_code == 200
+    assert schema.json()["info"]["title"] == "CYBERARENA"
+    assert "/api/challenges" in schema.json()["paths"]
+    snapshot = json.loads((Path(__file__).resolve().parents[1] / "api" / "openapi.json").read_text())
+    assert schema.json() == snapshot
+    assert "/docs" not in schema.json()["paths"]
+    assert "/openapi.json" not in schema.json()["paths"]
 
 
 def test_admin_can_create_challenge(client: TestClient):
@@ -407,6 +433,81 @@ def test_isolated_web_lab_idor_and_allowlisted_documents(client: TestClient):
         assert exposed.status_code == 200
         assert "CTF{idor_hidden_document}" in exposed.text
         assert lab.get("/documents/1003").status_code == 404
+
+
+def test_new_lab_challenges_are_isolated_and_flags_rotate(client: TestClient):
+    admin_client(client)
+    challenge_by_seed_url = {
+        challenge["resource_url"]: challenge["id"]
+        for challenge in client.get("/api/admin/challenges").json()
+    }
+    lab_urls = {
+        "/lab/sql/": ("web-03-sqli", "CTF{union_of_synthetic_records}", "CTF{sql_rotated}"),
+        "/lab/files/": ("web-04-path-traversal", "CTF{virtual_paths_only}", "CTF{path_rotated}"),
+        "/lab/shop/": ("business-01", "CTF{negative_quantity_credit}", "CTF{business_rotated}"),
+    }
+    with TestClient(lab_app) as lab:
+        assert "/lab/sql/" in lab.get("/").text
+        assert "CTF{" not in lab.get("/sql/", params={"username": "maria"}).text
+        sql_injection = lab.get("/sql/", params={"username": "' OR 1=1 --"})
+        assert sql_injection.status_code == 200
+        assert "CTF{union_of_synthetic_records}" in sql_injection.text
+
+        public_file = lab.get("/files/", params={"path": "readme.txt"})
+        assert "Публичная папка лаборатории" in public_file.text
+        traversal = lab.get("/files/", params={"path": "../../private/flag.txt"})
+        assert traversal.status_code == 200
+        assert "CTF{virtual_paths_only}" in traversal.text
+        assert "README.md" not in traversal.text
+        outside_virtual_files = lab.get("/files/", params={"path": "../../etc/passwd"})
+        assert "Файл не найден" in outside_virtual_files.text
+        assert "root:" not in outside_virtual_files.text
+
+        normal_purchase = lab.post("/shop/checkout", data={"quantity": "1"})
+        assert normal_purchase.status_code == 200
+        assert "Недостаточно кредитов" in normal_purchase.text
+        exploit_purchase = lab.post("/shop/checkout", data={"quantity": "-1"})
+        assert exploit_purchase.status_code == 200
+        assert "CTF{negative_quantity_credit}" in exploit_purchase.text
+        invalid_purchase = lab.post("/shop/checkout", data={"quantity": "not-a-number"})
+        assert invalid_purchase.status_code == 422
+        assert "Количество должно быть целым числом" in invalid_purchase.text
+        missing_quantity = lab.post("/shop/checkout", data={})
+        assert missing_quantity.status_code == 422
+        assert "Количество должно быть целым числом" in missing_quantity.text
+
+    for index, (resource_url, (_, old_flag, new_flag)) in enumerate(lab_urls.items()):
+        challenge_id = challenge_by_seed_url[resource_url]
+        changed = client.patch(
+            f"/api/admin/challenges/{challenge_id}",
+            json={"flag": new_flag},
+            headers={"X-CSRF-Token": csrf(client)},
+        )
+        assert changed.status_code == 200, changed.text
+        with TestClient(lab_app) as lab:
+            if resource_url == "/lab/sql/":
+                material = lab.get("/sql/", params={"username": "' OR 1=1 --"}).text
+            elif resource_url == "/lab/files/":
+                material = lab.get("/files/", params={"path": "../../private/flag.txt"}).text
+            else:
+                material = lab.post("/shop/checkout", data={"quantity": "-1"}).text
+        assert new_flag in material
+        assert old_flag not in material
+
+        with TestClient(platform_app) as player:
+            register(player, f"solver{index}")
+            rejected = player.post(
+                f"/api/challenges/{challenge_id}/submit",
+                json={"flag": old_flag},
+                headers={"X-CSRF-Token": csrf(player)},
+            )
+            accepted = player.post(
+                f"/api/challenges/{challenge_id}/submit",
+                json={"flag": new_flag},
+                headers={"X-CSRF-Token": csrf(player)},
+            )
+            assert rejected.status_code == 200 and rejected.json()["is_correct"] is False
+            assert accepted.status_code == 200 and accepted.json()["is_correct"] is True
 
 
 def test_admin_html_lifecycle_and_tournament_reset(client: TestClient):

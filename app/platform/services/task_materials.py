@@ -11,6 +11,13 @@ from app.platform.core.config import get_settings
 from app.platform.core.security import decrypt_flag
 from app.platform.models import Challenge
 
+LAB_SEED_KEYS = (
+    "web-01",
+    "web-03-sqli",
+    "web-04-path-traversal",
+    "business-01",
+)
+
 
 async def get_seeded_flag(db: AsyncSession, seed_key: str) -> str:
     challenge = await db.scalar(select(Challenge).where(Challenge.seed_key == seed_key))
@@ -20,12 +27,14 @@ async def get_seeded_flag(db: AsyncSession, seed_key: str) -> str:
 
 
 async def refresh_lab_flags(db: AsyncSession) -> None:
-    challenge = await db.scalar(select(Challenge).where(Challenge.seed_key == "web-01"))
-    flags = (
-        {"web-01": decrypt_flag(challenge.flag_encrypted)}
-        if challenge is not None and challenge.flag_encrypted is not None
-        else {}
-    )
+    challenges = (
+        await db.scalars(select(Challenge).where(Challenge.seed_key.in_(LAB_SEED_KEYS)))
+    ).all()
+    flags = {
+        challenge.seed_key: decrypt_flag(challenge.flag_encrypted)
+        for challenge in challenges
+        if challenge.seed_key is not None and challenge.flag_encrypted is not None
+    }
     target = get_settings().lab_flags_file
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = tempfile.NamedTemporaryFile(

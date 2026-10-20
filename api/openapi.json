@@ -1,0 +1,1578 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CYBERARENA",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/auth/csrf": {
+      "get": {
+        "summary": "Csrf Token",
+        "operationId": "csrf_token_api_auth_csrf_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Csrf Token Api Auth Csrf Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "summary": "Register",
+        "operationId": "register_api_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Register Api Auth Register Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Login Api Auth Login Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "summary": "Logout",
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Logout Api Auth Logout Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/admin/change-password": {
+      "post": {
+        "summary": "Change Admin Password Api",
+        "operationId": "change_admin_password_api_api_auth_admin_change_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPasswordChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Change Admin Password Api Api Auth Admin Change Password Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/me": {
+      "get": {
+        "summary": "Me",
+        "operationId": "me_api_users_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Me Api Users Me Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/challenges": {
+      "get": {
+        "summary": "List Challenges",
+        "operationId": "list_challenges_api_challenges_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response List Challenges Api Challenges Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/challenges/{challenge_id}": {
+      "get": {
+        "summary": "Challenge Detail",
+        "operationId": "challenge_detail_api_challenges__challenge_id__get",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Challenge Detail Api Challenges  Challenge Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/challenges/{challenge_id}/submit": {
+      "post": {
+        "summary": "Submit",
+        "operationId": "submit_api_challenges__challenge_id__submit_post",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlagSubmission"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Submit Api Challenges  Challenge Id  Submit Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scoreboard": {
+      "get": {
+        "summary": "Scoreboard",
+        "operationId": "scoreboard_api_scoreboard_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response Scoreboard Api Scoreboard Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/challenges": {
+      "get": {
+        "summary": "List All Challenges",
+        "operationId": "list_all_challenges_api_admin_challenges_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response List All Challenges Api Admin Challenges Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Challenge",
+        "operationId": "create_challenge_api_admin_challenges_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Create Challenge Api Admin Challenges Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/challenges/{challenge_id}": {
+      "get": {
+        "summary": "Get Challenge",
+        "operationId": "get_challenge_api_admin_challenges__challenge_id__get",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Challenge Api Admin Challenges  Challenge Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update Challenge",
+        "operationId": "update_challenge_api_admin_challenges__challenge_id__patch",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengePatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Challenge Api Admin Challenges  Challenge Id  Patch"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Challenge",
+        "operationId": "delete_challenge_api_admin_challenges__challenge_id__delete",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/challenges/{challenge_id}/publish": {
+      "post": {
+        "summary": "Publish Challenge",
+        "operationId": "publish_challenge_api_admin_challenges__challenge_id__publish_post",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Publish Challenge Api Admin Challenges  Challenge Id  Publish Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/challenges/{challenge_id}/unpublish": {
+      "post": {
+        "summary": "Unpublish Challenge",
+        "operationId": "unpublish_challenge_api_admin_challenges__challenge_id__unpublish_post",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Unpublish Challenge Api Admin Challenges  Challenge Id  Unpublish Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/submissions": {
+      "get": {
+        "summary": "Submissions",
+        "operationId": "submissions_api_admin_submissions_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Submissions Api Admin Submissions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/solves": {
+      "get": {
+        "summary": "Solves",
+        "operationId": "solves_api_admin_solves_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Solves Api Admin Solves Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/scoreboard": {
+      "get": {
+        "summary": "Admin Scoreboard",
+        "operationId": "admin_scoreboard_api_admin_scoreboard_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "type": "array",
+                  "title": "Response Admin Scoreboard Api Admin Scoreboard Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/tournament/reset": {
+      "post": {
+        "summary": "Reset Tournament",
+        "operationId": "reset_tournament_api_admin_tournament_reset_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "type": "object",
+                  "title": "Response Reset Tournament Api Admin Tournament Reset Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Home",
+        "operationId": "home__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/login": {
+      "get": {
+        "summary": "Login Page",
+        "operationId": "login_page_login_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Login Form",
+        "operationId": "login_form_login_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/register": {
+      "get": {
+        "summary": "Register Page",
+        "operationId": "register_page_register_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Register Form",
+        "operationId": "register_form_register_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logout": {
+      "get": {
+        "summary": "Logout Get",
+        "operationId": "logout_get_logout_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Logout Form",
+        "operationId": "logout_form_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/challenges": {
+      "get": {
+        "summary": "Challenge List",
+        "operationId": "challenge_list_challenges_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/challenges/{challenge_id}": {
+      "get": {
+        "summary": "Challenge Page",
+        "operationId": "challenge_page_challenges__challenge_id__get",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/challenges/{challenge_id}/submit": {
+      "post": {
+        "summary": "Challenge Submit Form",
+        "operationId": "challenge_submit_form_challenges__challenge_id__submit_post",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scoreboard": {
+      "get": {
+        "summary": "Scoreboard Page",
+        "operationId": "scoreboard_page_scoreboard_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/profile": {
+      "get": {
+        "summary": "Profile Page",
+        "operationId": "profile_page_profile_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin": {
+      "get": {
+        "summary": "Admin Dashboard",
+        "operationId": "admin_dashboard_admin_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/change-password": {
+      "get": {
+        "summary": "Admin Change Password Page",
+        "operationId": "admin_change_password_page_admin_change_password_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Admin Change Password Form",
+        "operationId": "admin_change_password_form_admin_change_password_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/challenges": {
+      "get": {
+        "summary": "Admin Challenge List",
+        "operationId": "admin_challenge_list_admin_challenges_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Admin Challenge Create Form",
+        "operationId": "admin_challenge_create_form_admin_challenges_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/challenges/new": {
+      "get": {
+        "summary": "Admin Challenge New",
+        "operationId": "admin_challenge_new_admin_challenges_new_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/challenges/{challenge_id}/edit": {
+      "get": {
+        "summary": "Admin Challenge Edit",
+        "operationId": "admin_challenge_edit_admin_challenges__challenge_id__edit_get",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Admin Challenge Update Form",
+        "operationId": "admin_challenge_update_form_admin_challenges__challenge_id__edit_post",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/challenges/{challenge_id}/publish": {
+      "post": {
+        "summary": "Admin Publish Form",
+        "operationId": "admin_publish_form_admin_challenges__challenge_id__publish_post",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/challenges/{challenge_id}/unpublish": {
+      "post": {
+        "summary": "Admin Unpublish Form",
+        "operationId": "admin_unpublish_form_admin_challenges__challenge_id__unpublish_post",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/challenges/{challenge_id}/delete": {
+      "post": {
+        "summary": "Admin Delete Form",
+        "operationId": "admin_delete_form_admin_challenges__challenge_id__delete_post",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/submissions": {
+      "get": {
+        "summary": "Admin Submissions",
+        "operationId": "admin_submissions_admin_submissions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/solves": {
+      "get": {
+        "summary": "Admin Solves",
+        "operationId": "admin_solves_admin_solves_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/scoreboard": {
+      "get": {
+        "summary": "Admin Scoreboard Page",
+        "operationId": "admin_scoreboard_page_admin_scoreboard_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/tournament/reset": {
+      "post": {
+        "summary": "Admin Reset Form",
+        "operationId": "admin_reset_form_admin_tournament_reset_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdminPasswordChange": {
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 10,
+            "title": "Current Password"
+          },
+          "new_password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 10,
+            "title": "New Password"
+          },
+          "confirm_password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 10,
+            "title": "Confirm Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password",
+          "confirm_password"
+        ],
+        "title": "AdminPasswordChange"
+      },
+      "ChallengeInput": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Category"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Description"
+          },
+          "points": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Points"
+          },
+          "flag": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Flag"
+          },
+          "is_published": {
+            "type": "boolean",
+            "title": "Is Published",
+            "default": false
+          },
+          "resource_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "category",
+          "description",
+          "points",
+          "flag"
+        ],
+        "title": "ChallengeInput"
+      },
+      "ChallengePatch": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "points": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Points"
+          },
+          "flag": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flag"
+          },
+          "is_published": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Published"
+          },
+          "resource_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Url"
+          }
+        },
+        "type": "object",
+        "title": "ChallengePatch"
+      },
+      "Credentials": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 3,
+            "pattern": "^[A-Za-z0-9_]+$",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 10,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Credentials"
+      },
+      "FlagSubmission": {
+        "properties": {
+          "flag": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Flag"
+          }
+        },
+        "type": "object",
+        "required": [
+          "flag"
+        ],
+        "title": "FlagSubmission"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
