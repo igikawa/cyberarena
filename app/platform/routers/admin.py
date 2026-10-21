@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+import pandas as pd
+from starlette.responses import Response
 
 from app.platform.dependencies import admin_user, require_csrf
 from app.platform.models import Challenge, Solve, Submission, User
@@ -129,6 +131,19 @@ async def solves(limit: int = Query(default=100, ge=1, le=500), db: AsyncSession
 async def admin_scoreboard(db: AsyncSession = Depends(get_db)) -> list[dict]:
     return await get_scoreboard(db)
 
+
+@router.get("/csvscoreboard")
+async def admin_csv_scoreboard(db: AsyncSession = Depends(get_db)) -> Response:
+    data = await get_scoreboard(db)
+    df = pd.DataFrame(data)
+    return Response(
+        content=df.to_csv(index=False),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'attachment; filename="admin_scoreboard.csv"',
+        },
+    )
 
 @router.post("/tournament/reset", dependencies=[Depends(require_csrf)])
 async def reset_tournament(db: AsyncSession = Depends(get_db)) -> dict[str, int]:

@@ -707,6 +707,22 @@
         }
       }
     },
+    "/api/admin/csvscoreboard": {
+      "get": {
+        "summary": "Admin Csv Scoreboard",
+        "operationId": "admin_csv_scoreboard_api_admin_csvscoreboard_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/tournament/reset": {
       "post": {
         "summary": "Reset Tournament",
