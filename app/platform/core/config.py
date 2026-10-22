@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[3]
 @dataclass(frozen=True)
 class Settings:
     database_url: str
+    redis_url: str | None
     secret_key: str
     flag_hmac_key: str
     lab_flags_file: Path
@@ -42,6 +43,7 @@ def get_settings() -> Settings:
         raise RuntimeError("SESSION_TTL_HOURS must be between 1 and 720")
     return Settings(
         database_url=database_url,
+        redis_url=os.getenv("REDIS_URL") or None,
         secret_key=secret_key,
         flag_hmac_key=flag_hmac_key,
         lab_flags_file=Path(os.getenv("LAB_FLAGS_FILE", "/tmp/cyberarena-lab-flags.json")),

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.platform.services.scoreboard import get_scoreboard
@@ -8,5 +8,5 @@ router = APIRouter()
 
 
 @router.get("/api/scoreboard")
-async def scoreboard(db: AsyncSession = Depends(get_db)) -> list[dict]:
-    return await get_scoreboard(db)
+async def scoreboard(request: Request, db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await get_scoreboard(db, request.app.state.redis)

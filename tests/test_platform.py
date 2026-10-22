@@ -29,6 +29,71 @@ def test_registration_and_duplicate_username(client: TestClient):
     assert response.status_code == 409
 
 
+def test_challenge_sort_controls_and_profile_navigation(client: TestClient):
+    register(client, "profileuser")
+    listing = client.get("/challenges")
+    assert "id=\"challenge-sort\"" in listing.text
+    assert "value=\"title\">Названию" in listing.text
+    assert "value=\"category\">Типу" in listing.text
+    assert "value=\"status\">Статусу" in listing.text
+    assert "data-status=\"unsolved\"" in listing.text
+    assert "/static/challenges.js?v=2" in listing.text
+    assert "Профиль" in listing.text
+    assert "profileuser" not in listing.text
+    assert "action=\"/logout\"" not in listing.text
+
+    profile = client.get("/profile")
+    assert profile.status_code == 200
+    assert "profileuser" in profile.text
+    assert "action=\"/logout\"" in profile.text
+    assert "Выйти" in profile.text
+
+
+def test_browser_errors_are_html_and_api_errors_negotiate_html_or_json(client: TestClient):
+    html_404 = client.get("/missing-page", headers={"Accept": "text/html"})
+    assert html_404.status_code == 404
+    assert html_404.headers["content-type"].startswith("text/html")
+    assert "Страница не найдена" in html_404.text
+    assert "/errors/unavailable.css" in html_404.text
+
+    api_404_html = client.get("/api/missing-route", headers={"Accept": "text/html"})
+    assert api_404_html.status_code == 404
+    assert api_404_html.headers["content-type"].startswith("text/html")
+    assert "Страница не найдена" in api_404_html.text
+
+    api_401_html = client.get("/api/admin/challenges", headers={"Accept": "text/html"})
+    assert api_401_html.status_code == 401
+    assert api_401_html.headers["content-type"].startswith("text/html")
+
+    api_404_json = client.get("/api/missing-route", headers={"Accept": "application/json"})
+    assert api_404_json.status_code == 404
+    assert api_404_json.headers["content-type"].startswith("application/json")
+    assert api_404_json.json() == {"detail": "Not Found"}
+
+    register(client, "html403user")
+    api_403_html = client.get("/api/admin/challenges", headers={"Accept": "text/html"})
+    assert api_403_html.status_code == 403
+    assert api_403_html.headers["content-type"].startswith("text/html")
+    assert "Доступ запрещён" in api_403_html.text
+
+    validation = client.post(
+        "/api/auth/register",
+        json={"username": "", "password": ""},
+        headers={"Accept": "application/json", "X-CSRF-Token": csrf(client)},
+    )
+    assert validation.status_code == 422
+    assert validation.headers["content-type"].startswith("application/json")
+    assert "detail" in validation.json()
+
+
+def test_lab_browser_errors_are_html():
+    with TestClient(lab_app) as lab_client:
+        response = lab_client.get("/documents/999", headers={"Accept": "text/html"})
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Страница не найдена" in response.text
+
+
 def test_login_success_and_failure(client: TestClient):
     register(client, "loginuser")
     client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf(client)})
@@ -348,6 +413,7 @@ def test_seeded_challenges_and_local_resources(client: TestClient):
     script = client.get("/static/tasks/web02/clue.js")
     assert web02.status_code == script.status_code == 200
     assert "/static/tasks/web02/clue.js" in web02.text
+    assert "<summary>Подсказка</summary>" in web02.text
     assert "CTF{source_maps_are_not_needed}" in script.text
     crypto = client.get("/tasks/crypto01/download")
     assert crypto.status_code == 200
@@ -427,8 +493,14 @@ def test_rotating_seed_flags_updates_task_materials_and_validation(client: TestC
 
 def test_isolated_web_lab_idor_and_allowlisted_documents(client: TestClient):
     with TestClient(lab_app) as lab:
-        assert lab.get("/").status_code == 200
-        assert lab.get("/documents/1001").status_code == 200
+        home = lab.get("/")
+        assert home.status_code == 200
+        assert "WEB · IDOR" in home.text
+        assert "SQL" in home.text
+        assert "Начать исследование" in home.text
+        document = lab.get("/documents/1001")
+        assert document.status_code == 200
+        assert "<summary>Подсказка</summary>" in document.text
         exposed = lab.get("/documents/1002")
         assert exposed.status_code == 200
         assert "CTF{idor_hidden_document}" in exposed.text
@@ -448,13 +520,16 @@ def test_new_lab_challenges_are_isolated_and_flags_rotate(client: TestClient):
     }
     with TestClient(lab_app) as lab:
         assert "/lab/sql/" in lab.get("/").text
-        assert "CTF{" not in lab.get("/sql/", params={"username": "maria"}).text
+        normal_search = lab.get("/sql/", params={"username": "maria"})
+        assert "CTF{" not in normal_search.text
+        assert "<summary>Подсказка</summary>" in normal_search.text
         sql_injection = lab.get("/sql/", params={"username": "' OR 1=1 --"})
         assert sql_injection.status_code == 200
         assert "CTF{union_of_synthetic_records}" in sql_injection.text
 
         public_file = lab.get("/files/", params={"path": "readme.txt"})
         assert "Публичная папка лаборатории" in public_file.text
+        assert "<summary>Подсказка</summary>" in public_file.text
         traversal = lab.get("/files/", params={"path": "../../private/flag.txt"})
         assert traversal.status_code == 200
         assert "CTF{virtual_paths_only}" in traversal.text
@@ -466,6 +541,7 @@ def test_new_lab_challenges_are_isolated_and_flags_rotate(client: TestClient):
         normal_purchase = lab.post("/shop/checkout", data={"quantity": "1"})
         assert normal_purchase.status_code == 200
         assert "Недостаточно кредитов" in normal_purchase.text
+        assert "<summary>Подсказка</summary>" in normal_purchase.text
         exploit_purchase = lab.post("/shop/checkout", data={"quantity": "-1"})
         assert exploit_purchase.status_code == 200
         assert "CTF{negative_quantity_credit}" in exploit_purchase.text
@@ -610,3 +686,186 @@ def test_solve_persists_after_reconnecting(client: TestClient):
             await engine.dispose()
 
     asyncio.run(read_persisted_score())
+
+
+def test_redis_cache_hits_and_invalidates_for_challenges_and_scoreboard(client: TestClient):
+    class MemoryRedis:
+        def __init__(self):
+            self.values = {}
+            self.reads = 0
+
+        async def get(self, key):
+            self.reads += 1
+            return self.values.get(key)
+
+        async def set(self, key, value, ex):
+            assert ex == 15
+            self.values[key] = value
+
+        async def delete(self, *keys):
+            for key in keys:
+                self.values.pop(key, None)
+
+        async def incr(self, key):
+            value = int(self.values.get(key, "0")) + 1
+            self.values[key] = str(value)
+            return value
+
+    cache = MemoryRedis()
+    client.app.state.redis = cache
+    admin_client(client)
+    challenge_id = create_challenge(client, "CTF{cached-solve}", points=50)
+
+    first = client.get("/api/challenges").json()
+    second = client.get("/api/challenges").json()
+    assert first == second
+    assert cache.reads == 5
+
+    from app.platform.services.cache import (
+        CHALLENGES_CACHE_KEY,
+        get_json_cache,
+        invalidate_challenges_cache,
+        set_json_cache,
+    )
+
+    async def reject_outdated_cache_writer():
+        stale_read = await get_json_cache(cache, CHALLENGES_CACHE_KEY, list)
+        assert stale_read.value is not None
+        assert [item["id"] for item in stale_read.value] == [item["id"] for item in first]
+        await invalidate_challenges_cache(cache)
+        await set_json_cache(
+            cache,
+            CHALLENGES_CACHE_KEY,
+            [{"id": -1}],
+            stale_read.generation,
+        )
+        current_read = await get_json_cache(cache, CHALLENGES_CACHE_KEY, list)
+        assert current_read.value is None
+
+    asyncio.run(reject_outdated_cache_writer())
+    assert client.get("/api/challenges").json() == first
+
+    added_id = create_challenge(client, "CTF{cache-create}")
+    added = client.get("/api/challenges").json()
+    assert added[-1]["id"] == added_id
+
+    token = csrf(client)
+    assert client.post(
+        f"/api/admin/challenges/{added_id}/unpublish",
+        headers={"X-CSRF-Token": token},
+    ).status_code == 200
+    assert added_id not in {item["id"] for item in client.get("/api/challenges").json()}
+    assert client.post(
+        f"/api/admin/challenges/{added_id}/publish",
+        headers={"X-CSRF-Token": csrf(client)},
+    ).status_code == 200
+    assert added_id in {item["id"] for item in client.get("/api/challenges").json()}
+    assert client.post(
+        f"/admin/challenges/{added_id}/unpublish",
+        data={"csrf_token": csrf(client)},
+        follow_redirects=False,
+    ).status_code == 303
+    assert added_id not in {item["id"] for item in client.get("/api/challenges").json()}
+    assert client.post(
+        f"/admin/challenges/{added_id}/publish",
+        data={"csrf_token": csrf(client)},
+        follow_redirects=False,
+    ).status_code == 303
+    assert added_id in {item["id"] for item in client.get("/api/challenges").json()}
+
+    deleted_id = create_challenge(client, "CTF{cache-delete}")
+    assert client.delete(
+        f"/api/admin/challenges/{deleted_id}",
+        headers={"X-CSRF-Token": csrf(client)},
+    ).status_code == 204
+    assert deleted_id not in {item["id"] for item in client.get("/api/challenges").json()}
+
+    client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf(client)})
+    register(client, "cacheplayer")
+    assert client.get("/api/challenges").json()[-1]["is_solved"] is False
+    solved = client.post(
+        f"/api/challenges/{challenge_id}/submit",
+        json={"flag": "CTF{cached-solve}"},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    assert solved.json()["status"] == "correct"
+    assert client.get(f"/api/challenges/{challenge_id}").json()["is_solved"] is True
+
+    scoreboard = client.get("/api/scoreboard").json()
+    assert next(row["score"] for row in scoreboard if row["username"] == "cacheplayer") == 50
+    assert client.get("/scoreboard").status_code == 200
+
+    client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf(client)})
+    login = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": TEST_ADMIN_NEW_PASSWORD},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    assert login.status_code == 200
+    updated = client.patch(
+        f"/api/admin/challenges/{challenge_id}",
+        json={"points": 75},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    assert updated.status_code == 200
+    assert client.get(f"/api/challenges/{challenge_id}").json()["points"] == 75
+    scoreboard = client.get("/api/scoreboard").json()
+    assert next(row["score"] for row in scoreboard if row["username"] == "cacheplayer") == 75
+
+    assert client.post(
+        "/api/admin/tournament/reset",
+        headers={"X-CSRF-Token": csrf(client)},
+    ).status_code == 200
+    scoreboard = client.get("/api/scoreboard").json()
+    assert next(row["score"] for row in scoreboard if row["username"] == "cacheplayer") == 0
+    client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf(client)})
+    player_login = client.post(
+        "/api/auth/login",
+        json={"username": "cacheplayer", "password": "user-password-123"},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    assert player_login.status_code == 200
+    client.post(
+        f"/api/challenges/{challenge_id}/submit",
+        json={"flag": "CTF{cached-solve}"},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    assert next(
+        row["score"]
+        for row in client.get("/api/scoreboard").json()
+        if row["username"] == "cacheplayer"
+    ) == 75
+    client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf(client)})
+    admin_login = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": TEST_ADMIN_NEW_PASSWORD},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    assert admin_login.status_code == 200
+    assert client.post(
+        "/admin/tournament/reset",
+        data={"csrf_token": csrf(client)},
+        follow_redirects=False,
+    ).status_code == 303
+    assert next(
+        row["score"]
+        for row in client.get("/api/scoreboard").json()
+        if row["username"] == "cacheplayer"
+    ) == 0
+
+    from redis.exceptions import RedisError
+
+    class UnavailableRedis:
+        async def get(self, key):
+            raise RedisError("test Redis outage")
+
+        async def set(self, key, value, ex):
+            raise RedisError("test Redis outage")
+
+        async def incr(self, key):
+            raise RedisError("test Redis outage")
+
+    client.app.state.redis = UnavailableRedis()
+    assert client.get("/api/challenges").status_code == 200
+    scoreboard = client.get("/api/scoreboard").json()
+    assert next(row["score"] for row in scoreboard if row["username"] == "cacheplayer") == 0

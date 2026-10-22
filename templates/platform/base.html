@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
     <title>{% block title %}CYBERARENA{% endblock %}</title>
-    <link rel="stylesheet" href="/static/main.css">
+    <link rel="stylesheet" href="/static/main.css?v=2">
 </head>
 <body>
 <header class="topbar">
@@ -14,12 +14,8 @@
         <a href="/challenges">Задания</a>
         <a href="/scoreboard">Рейтинг</a>
         {% if user %}
-            <a href="/profile">{{ user.username }}</a>
-            {% if user.is_admin %}<a href="/admin">Админка</a>{% endif %}
-            <form class="nav-form" action="/logout" method="post">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button class="nav-button" type="submit">Выйти</button>
-            </form>
+            <a class="nav-cta" href="/profile">Профиль</a>
+            {% if user.is_admin %}<a class="button nav-admin" href="/admin">Админка</a>{% endif %}
         {% else %}
             <a href="/login">Войти</a>
             <a class="nav-cta" href="/register">Регистрация</a>

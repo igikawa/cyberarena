@@ -27,6 +27,10 @@ from app.platform.services.auth import (
     change_admin_password,
     register_user,
 )
+from app.platform.services.cache import (
+    invalidate_challenges_cache,
+    invalidate_scoreboard_cache,
+)
 from app.platform.services.challenges import (
     create_challenge as create_challenge_record,
     delete_challenge as delete_challenge_record,
@@ -121,7 +125,7 @@ async def web02_clue(db: AsyncSession = Depends(get_db)) -> Response:
     flag = await get_seeded_flag(db, "web-02")
     script = (
         'document.getElementById("hint").textContent = '
-        '"Подсказка: ответ ищите в исходном коде подключённого файла.";\n'
+        '"ответ ищите в исходном коде подключённого файла.";\n'
         f"const pageNote = {json.dumps(flag)};\n"
         'console.info("Проверочная метка для учебной задачи:", pageNote);\n'
     )
@@ -229,7 +233,9 @@ async def challenge_submit_form(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     form = await form_values(request)
-    result = await submit_flag(db, user, challenge_id, form.get("flag", ""))
+    result = await submit_flag(
+        db, user, challenge_id, form.get("flag", ""), request.app.state.redis
+    )
     message = {
         "incorrect": ("Неверный флаг.", "error"),
         "already_solved": ("Вы уже решили это задание.", "info"),
@@ -244,7 +250,12 @@ async def challenge_submit_form(
 
 @router.get("/scoreboard")
 async def scoreboard_page(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
-    return await render(request, "scoreboard.html", {"rows": await get_scoreboard(db)}, db=db)
+    return await render(
+        request,
+        "scoreboard.html",
+        {"rows": await get_scoreboard(db, request.app.state.redis)},
+        db=db,
+    )
 
 
 @router.get("/profile")
@@ -345,7 +356,7 @@ async def admin_challenge_create_form(request: Request, _: User = Depends(admin_
         validate_resource_url(data.resource_url)
     except (ValidationError, HTTPException):
         return await render(request, "admin/challenges/form.html", {"error": "Проверьте поля задания."}, 422, db)
-    await create_challenge_record(db, data)
+    await create_challenge_record(db, data, request.app.state.redis)
     return RedirectResponse("/admin/challenges", status_code=303)
 
 
@@ -371,27 +382,39 @@ async def admin_challenge_update_form(challenge_id: int, request: Request, _: Us
         validate_resource_url(data.resource_url)
     except (ValidationError, HTTPException):
         return await render(request, "admin/challenges/form.html", {"error": "Проверьте поля задания.", "challenge": challenge}, 422, db)
-    await update_challenge_record(db, challenge, data)
+    await update_challenge_record(db, challenge, data, request.app.state.redis)
     return RedirectResponse("/admin/challenges", status_code=303)
 
 
 @router.post("/admin/challenges/{challenge_id}/publish", dependencies=[Depends(require_csrf)])
-async def admin_publish_form(challenge_id: int, _: User = Depends(admin_user), db: AsyncSession = Depends(get_db)) -> Response:
+async def admin_publish_form(
+    challenge_id: int,
+    request: Request,
+    _: User = Depends(admin_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
     challenge = await db.get(Challenge, challenge_id)
     if challenge is None:
         raise HTTPException(status_code=404, detail="Challenge not found")
     challenge.is_published = True
     await db.commit()
+    await invalidate_challenges_cache(request.app.state.redis)
     return RedirectResponse("/admin/challenges", status_code=303)
 
 
 @router.post("/admin/challenges/{challenge_id}/unpublish", dependencies=[Depends(require_csrf)])
-async def admin_unpublish_form(challenge_id: int, _: User = Depends(admin_user), db: AsyncSession = Depends(get_db)) -> Response:
+async def admin_unpublish_form(
+    challenge_id: int,
+    request: Request,
+    _: User = Depends(admin_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
     challenge = await db.get(Challenge, challenge_id)
     if challenge is None:
         raise HTTPException(status_code=404, detail="Challenge not found")
     challenge.is_published = False
     await db.commit()
+    await invalidate_challenges_cache(request.app.state.redis)
     return RedirectResponse("/admin/challenges", status_code=303)
 
 
@@ -401,7 +424,7 @@ async def admin_delete_form(challenge_id: int, request: Request, _: User = Depen
     if challenge is None:
         raise HTTPException(status_code=404, detail="Challenge not found")
     try:
-        await delete_challenge_record(db, challenge)
+        await delete_challenge_record(db, challenge, request.app.state.redis)
     except HTTPException as exc:
         if exc.status_code != 409:
             raise
@@ -427,7 +450,12 @@ async def admin_solves(request: Request, _: User = Depends(admin_user), db: Asyn
 
 @router.get("/admin/scoreboard")
 async def admin_scoreboard_page(request: Request, _: User = Depends(admin_user), db: AsyncSession = Depends(get_db)) -> Response:
-    return await render(request, "admin/scoreboard.html", {"rows": await get_scoreboard(db)}, db=db)
+    return await render(
+        request,
+        "admin/scoreboard.html",
+        {"rows": await get_scoreboard(db, request.app.state.redis)},
+        db=db,
+    )
 
 
 @router.post("/admin/tournament/reset", dependencies=[Depends(require_csrf)])
@@ -435,6 +463,7 @@ async def admin_reset_form(request: Request, _: User = Depends(admin_user), db: 
     await db.execute(Submission.__table__.delete())
     await db.execute(Solve.__table__.delete())
     await db.commit()
+    await invalidate_scoreboard_cache(request.app.state.redis)
     auth_session = await db.get(AuthSession, hash_session_token(request.cookies["cyberarena_session"]))
     if auth_session:
         set_flash(auth_session, "Результаты турнира сброшены.", "success")

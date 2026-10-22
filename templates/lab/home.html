@@ -1,18 +1,39 @@
 {% extends "base.html" %}
 {% block title %}Архив документов · CYBERARENA{% endblock %}
 {% block content %}
-<p class="eyebrow">CYBERARENA · WEB-01</p>
-<h1>Архив документов</h1>
-<p>Тестовый портал отдела. Документы доступны по адресу вида <code>/documents/ID</code>.</p>
+<section class="hero">
+    <p class="eyebrow">Практический трек · 4 задания</p>
+    <h1>Лаборатория</h1>
+    <p class="lede">Изучайте веб-уязвимости и бизнес-логику на изолированных учебных сервисах. Все данные синтетические, а флаги проверяются на платформе.</p>
+</section>
+<div class="challenge-grid">
+    <a class="challenge-card" href="/lab/documents/1001">
+        <div class="card-top"><span class="tag">WEB · IDOR</span><span class="points">100 pts</span></div>
+        <h2>Архив документов</h2>
+        <p>Проверьте контроль доступа к записям внутреннего портала.</p>
+        <div class="card-bottom"><span>Начать исследование</span><span>↗</span></div>
+    </a>
+    <a class="challenge-card" href="/lab/sql/">
+        <div class="card-top"><span class="tag">WEB · SQL</span><span class="points">200 pts</span></div>
+        <h2>Архив сотрудников</h2>
+        <p>Исследуйте поиск по локальному каталогу и поведение фильтра.</p>
+        <div class="card-bottom"><span>Начать исследование</span><span>↗</span></div>
+    </a>
+    <a class="challenge-card" href="/lab/files/">
+        <div class="card-top"><span class="tag">WEB · FILES</span><span class="points">200 pts</span></div>
+        <h2>За пределами папки</h2>
+        <p>Проверьте, как файловый просмотрщик нормализует переданный путь.</p>
+        <div class="card-bottom"><span>Начать исследование</span><span>↗</span></div>
+    </a>
+    <a class="challenge-card" href="/lab/shop/">
+        <div class="card-top"><span class="tag">BUSINESS LOGIC</span><span class="points">200 pts</span></div>
+        <h2>Магазин с ошибкой</h2>
+        <p>Оцените расчёт заказа, баланс и границы доверия к вводу.</p>
+        <div class="card-bottom"><span>Начать исследование</span><span>↗</span></div>
+    </a>
+</div>
 <section class="panel">
-    <h2>Последние документы</h2>
-    <ul>
-        <li><a href="/lab/documents/1001">1001 — Инструкция для сотрудников</a></li>
-        <li>1002 — Личный документ руководителя (ID указан в журнале документов)</li>
-        <li><a href="/lab/sql/">WEB-03 — Архив сотрудников</a></li>
-        <li><a href="/lab/files/">WEB-04 — За пределами папки</a></li>
-        <li><a href="/lab/shop/">BIZ-01 — Магазин с ошибкой</a></li>
-    </ul>
-    <p>Для проверки макета откройте карточку документа 1001. Все записи содержат только синтетические данные.</p>
+    <h2>Правила лаборатории</h2>
+    <p>Работайте только с ресурсами, размещёнными в этой учебной среде. Успешное решение покажет флаг — отправьте его в карточке задания на платформе.</p>
 </section>
 {% endblock %}

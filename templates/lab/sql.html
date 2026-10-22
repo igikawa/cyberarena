@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Архив сотрудников · WEB-03{% endblock %}
+{% block content %}
+<p class="eyebrow">WEB-03 · Поиск по каталогу</p>
+<a href="/lab/">← К заданиям лаборатории</a>
+<h1>Архив сотрудников</h1>
+<p class="lede">Внутренняя панель отдела кадров. Поиск доступен по имени пользователя.</p>
+<div class="task-meta"><span>Сложность: средняя</span><span>Категория: Web</span><span>Цель: найти скрытую запись</span></div>
+<section class="panel">
+    <h2>Справочник персонала</h2>
+    <p>Введите имя сотрудника, чтобы найти его запись в тестовом каталоге.</p>
+    <form class="task-form" method="get">
+        <label for="username">Имя пользователя</label>
+        <input id="username" name="username" value="{{ username }}" placeholder="например, maria" autocomplete="off">
+        <button type="submit">Выполнить поиск</button>
+    </form>
+    {% if message %}<p class="notice">{{ message }}</p>{% endif %}
+    <h2>Результаты поиска</h2>
+    <ul class="result-list">
+        {% for username_value, note in rows %}
+        <li><strong>{{ username_value }}</strong><br>{{ note }}</li>
+        {% else %}
+        <li>Записей не найдено.</li>
+        {% endfor %}
+    </ul>
+</section>
+<details class="hint">
+    <summary>Подсказка</summary>
+    <div class="hint-content"><p>Сравните поведение запроса с обычным именем и с вводом, который может изменить структуру условия поиска.</p></div>
+</details>
+{% endblock %}

@@ -1,7 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Профиль · CYBERARENA{% endblock %}
 {% block content %}
-<section class="page-heading"><p class="eyebrow">Участник платформы</p><h1>{{ profile.username }}</h1><p class="muted">В команде с {{ profile.created_at.strftime("%Y-%m-%d") }}</p></section>
+<section class="page-heading heading-row">
+    <div><p class="eyebrow">Участник платформы</p><h1>{{ profile.username }}</h1><p class="muted">В команде с {{ profile.created_at.strftime("%Y-%m-%d") }}</p></div>
+    <form action="/logout" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button button-secondary" type="submit">Выйти</button>
+    </form>
+</section>
 <section class="panel"><h2>Решённые задания</h2>
 {% if solves %}<div class="table-wrap"><table><thead><tr><th>Задание</th><th>Баллы</th><th>Решено</th></tr></thead><tbody>
 {% for solve, challenge in solves %}<tr><td>{{ challenge.title }}</td><td class="points">{{ challenge.points }}</td><td class="muted">{{ solve.solved_at.strftime("%Y-%m-%d %H:%M UTC") }}</td></tr>{% endfor %}

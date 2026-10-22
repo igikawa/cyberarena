@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from redis.asyncio import Redis
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 import pandas as pd
@@ -12,6 +13,10 @@ from app.platform.services.challenges import (
     delete_challenge as delete_challenge_record,
     update_challenge as update_challenge_record,
     validate_resource_url,
+)
+from app.platform.services.cache import (
+    invalidate_challenges_cache,
+    invalidate_scoreboard_cache,
 )
 from app.platform.services.scoreboard import get_scoreboard
 from app.platform.storage import get_db
@@ -40,8 +45,10 @@ async def list_all_challenges(db: AsyncSession = Depends(get_db)) -> list[dict]:
 
 
 @router.post("/challenges", status_code=201, dependencies=[Depends(require_csrf)])
-async def create_challenge(data: ChallengeInput, db: AsyncSession = Depends(get_db)) -> dict:
-    challenge = await create_challenge_record(db, data)
+async def create_challenge(
+    data: ChallengeInput, request: Request, db: AsyncSession = Depends(get_db)
+) -> dict:
+    challenge = await create_challenge_record(db, data, request.app.state.redis)
     return admin_challenge_view(challenge)
 
 
@@ -54,39 +61,53 @@ async def get_challenge(challenge_id: int, db: AsyncSession = Depends(get_db)) -
 
 
 @router.patch("/challenges/{challenge_id}", dependencies=[Depends(require_csrf)])
-async def update_challenge(challenge_id: int, data: ChallengePatch, db: AsyncSession = Depends(get_db)) -> dict:
+async def update_challenge(
+    challenge_id: int,
+    data: ChallengePatch,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     challenge = await db.get(Challenge, challenge_id)
     if challenge is None:
         raise HTTPException(status_code=404, detail="Challenge not found")
-    challenge = await update_challenge_record(db, challenge, data)
+    challenge = await update_challenge_record(db, challenge, data, request.app.state.redis)
     return admin_challenge_view(challenge)
 
 
 @router.delete("/challenges/{challenge_id}", status_code=204, dependencies=[Depends(require_csrf)])
-async def delete_challenge(challenge_id: int, db: AsyncSession = Depends(get_db)) -> None:
+async def delete_challenge(
+    challenge_id: int, request: Request, db: AsyncSession = Depends(get_db)
+) -> None:
     challenge = await db.get(Challenge, challenge_id)
     if challenge is None:
         raise HTTPException(status_code=404, detail="Challenge not found")
-    await delete_challenge_record(db, challenge)
+    await delete_challenge_record(db, challenge, request.app.state.redis)
 
 
-async def set_published(challenge_id: int, published: bool, db: AsyncSession) -> dict:
+async def set_published(
+    challenge_id: int, published: bool, db: AsyncSession, cache: Redis | None
+) -> dict:
     challenge = await db.get(Challenge, challenge_id)
     if challenge is None:
         raise HTTPException(status_code=404, detail="Challenge not found")
     challenge.is_published = published
     await db.commit()
+    await invalidate_challenges_cache(cache)
     return {"id": challenge.id, "is_published": published}
 
 
 @router.post("/challenges/{challenge_id}/publish", dependencies=[Depends(require_csrf)])
-async def publish_challenge(challenge_id: int, db: AsyncSession = Depends(get_db)) -> dict:
-    return await set_published(challenge_id, True, db)
+async def publish_challenge(
+    challenge_id: int, request: Request, db: AsyncSession = Depends(get_db)
+) -> dict:
+    return await set_published(challenge_id, True, db, request.app.state.redis)
 
 
 @router.post("/challenges/{challenge_id}/unpublish", dependencies=[Depends(require_csrf)])
-async def unpublish_challenge(challenge_id: int, db: AsyncSession = Depends(get_db)) -> dict:
-    return await set_published(challenge_id, False, db)
+async def unpublish_challenge(
+    challenge_id: int, request: Request, db: AsyncSession = Depends(get_db)
+) -> dict:
+    return await set_published(challenge_id, False, db, request.app.state.redis)
 
 
 @router.get("/submissions")
@@ -128,13 +149,15 @@ async def solves(limit: int = Query(default=100, ge=1, le=500), db: AsyncSession
 
 
 @router.get("/scoreboard")
-async def admin_scoreboard(db: AsyncSession = Depends(get_db)) -> list[dict]:
-    return await get_scoreboard(db)
+async def admin_scoreboard(request: Request, db: AsyncSession = Depends(get_db)) -> list[dict]:
+    return await get_scoreboard(db, request.app.state.redis)
 
 
 @router.get("/csvscoreboard")
-async def admin_csv_scoreboard(db: AsyncSession = Depends(get_db)) -> Response:
-    data = await get_scoreboard(db)
+async def admin_csv_scoreboard(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> Response:
+    data = await get_scoreboard(db, request.app.state.redis)
     df = pd.DataFrame(data)
     return Response(
         content=df.to_csv(index=False),
@@ -146,8 +169,11 @@ async def admin_csv_scoreboard(db: AsyncSession = Depends(get_db)) -> Response:
     )
 
 @router.post("/tournament/reset", dependencies=[Depends(require_csrf)])
-async def reset_tournament(db: AsyncSession = Depends(get_db)) -> dict[str, int]:
+async def reset_tournament(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> dict[str, int]:
     submission_result = await db.execute(delete(Submission))
     solve_result = await db.execute(delete(Solve))
     await db.commit()
+    await invalidate_scoreboard_cache(request.app.state.redis)
     return {"submissions_deleted": submission_result.rowcount or 0, "solves_deleted": solve_result.rowcount or 0}

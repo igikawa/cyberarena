@@ -2,12 +2,13 @@ name: cyberarena
 
 services:
   nginx:
-    image: nginx:stable-alpine
+    image: nginx:1.28-alpine
     user: "101:101"
     ports:
       - "127.0.0.1:8080:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/errors:/usr/share/nginx/html/errors:ro
     depends_on:
       app:
         condition: service_healthy
@@ -15,7 +16,7 @@ services:
         condition: service_started
     networks:
       - edge-net
-      - app-net
+      - nginx-app-net
       - lab-net
     restart: unless-stopped
     read_only: true
@@ -50,14 +51,18 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE}
       ADMIN_USERNAME: ${ADMIN_USERNAME}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      REDIS_URL: redis://${REDIS_USER}:${REDIS_USER_PASSWORD}@redis:6379/0
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
     networks:
       - app-net
+      - nginx-app-net
     volumes:
       - lab-flags:/run/cyberarena/lab-flags
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
     init: true
@@ -139,46 +144,29 @@ services:
     cpus: 1.00
 
   redis:
-    image: redis:latest
-    container_name: redis_container
+    image: redis:7.4-alpine
+    user: "999:999"
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_USER: ${REDIS_USER}
       REDIS_USER_PASSWORD: ${REDIS_USER_PASSWORD}
-    # TODO: Remove ports in production start
-    ports:
-      - "6380:6379"
-    volumes:
-      - ./redisdata:/data
     networks:
       - app-net
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-    command: >
-      sh -c '
-        mkdir -p /usr/local/etc/redis &&
-        echo "bind 0.0.0.0" > /usr/local/etc/redis/redis.conf &&
-        echo "requirepass ${REDIS_PASSWORD}" >> /usr/local/etc/redis/redis.conf &&
-        echo "appendonly yes" >> /usr/local/etc/redis/redis.conf &&
-        echo "appendfsync everysec" >> /usr/local/etc/redis/redis.conf &&
-        echo "user default on nopass ~* +@all" > /usr/local/etc/redis/users.acl &&
-        echo "user ${REDIS_USER} on >${REDIS_USER_PASSWORD} ~* +@all" >> /usr/local/etc/redis/users.acl &&
-        redis-server /usr/local/etc/redis/redis.conf --aclfile /usr/local/etc/redis/users.acl
-      '
+    command:
+      - sh
+      - -c
+      - |
+        printf 'user default off\nuser %s on >%s ~cyberarena:* +get +set +del +incrby +ping +hello\n' "$$REDIS_USER" "$$REDIS_USER_PASSWORD" > /tmp/users.acl
+        exec redis-server --aclfile /tmp/users.acl --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru
     healthcheck:
-      test: [ "CMD", "redis-cli", "-a", "$REDIS_PASSWORD", "ping" ]
+      test: ["CMD-SHELL", "redis-cli --user \"$${REDIS_USER}\" --pass \"$${REDIS_USER_PASSWORD}\" ping"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 5
     restart: unless-stopped
-    tty: true
-    stdin_open: true
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 384m
+    cpus: 0.50
 
 
 volumes:
@@ -193,6 +181,8 @@ networks:
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "false"
   app-net:
+    internal: true
+  nginx-app-net:
     internal: true
   lab-net:
     internal: true
