@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Попытки · Администрирование{% endblock %}
+{% block content %}<section class="page-heading"><p class="eyebrow">Мониторинг</p><h1>Попытки отправки флагов</h1></section>
+<div class="table-wrap"><table><thead><tr><th>Участник</th><th>Задание</th><th>Результат</th><th>Время UTC</th></tr></thead><tbody>
+{% for submission, username, title in rows %}<tr><td>{{ username }}</td><td>{{ title }}</td><td><span class="status {{ 'status-live' if submission.is_correct else 'status-hidden' }}">{{ "Верно" if submission.is_correct else "Неверно" }}</span></td><td>{{ submission.submitted_at.strftime("%Y-%m-%d %H:%M:%S") }}</td></tr>{% else %}<tr><td colspan="4" class="empty-cell">Попыток пока нет.</td></tr>{% endfor %}
+</tbody></table></div>{% endblock %}

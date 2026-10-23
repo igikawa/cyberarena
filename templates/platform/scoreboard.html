@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Рейтинг · CYBERARENA{% endblock %}
+{% block content %}
+<section class="page-heading"><p class="eyebrow">Турнирная таблица</p><h1>Рейтинг участников</h1><p class="lede">Учитываются уникальные решения; результат сохраняется, даже если задание позже снято с публикации.</p></section>
+<div class="table-wrap"><table><thead><tr><th>#</th><th>Участник</th><th>Баллы</th><th>Последнее решение</th></tr></thead><tbody>
+{% for row in rows %}<tr><td class="rank">{{ loop.index }}</td><td>{{ row.username }}</td><td class="points">{{ row.score }}</td><td class="muted">{{ row.last_solve.strftime("%Y-%m-%d %H:%M UTC") if row.last_solve else "—" }}</td></tr>{% else %}<tr><td colspan="4" class="empty-cell">Пока нет участников.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

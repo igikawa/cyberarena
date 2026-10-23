@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Вход · CYBERARENA{% endblock %}
+{% block content %}
+<section class="auth-card">
+    <p class="eyebrow">С возвращением</p><h1>Войти в аккаунт</h1>
+    <form method="post" action="/login" class="stack-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Логин<input name="username" autocomplete="username" minlength="3" maxlength="32" required></label>
+        <label>Пароль<input name="password" type="password" autocomplete="current-password" required></label>
+        <button class="button" type="submit">Войти</button>
+    </form>
+    <p class="muted">Нет аккаунта? <a href="/register">Создать аккаунт</a></p>
+</section>
+{% endblock %}

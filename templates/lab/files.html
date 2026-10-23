@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Файловый просмотрщик · WEB-04{% endblock %}
+{% block content %}
+<p class="eyebrow">WEB-04 · Работа с путями</p>
+<a href="/lab/">← К заданиям лаборатории</a>
+<h1>Публичный файловый архив</h1>
+<p class="lede">Внутренний просмотрщик предназначен для чтения материалов из публичного каталога.</p>
+<div class="task-meta"><span>Сложность: средняя</span><span>Категория: Web</span><span>Корень: /public/manual</span></div>
+<section class="panel">
+    <h2>Открыть файл</h2>
+    <form class="task-form" method="get">
+        <label for="path">Относительный путь</label>
+        <input id="path" name="path" value="{{ path }}" placeholder="readme.txt" autocomplete="off">
+        <button type="submit">Открыть файл</button>
+    </form>
+    <h2>Содержимое</h2>
+    <pre class="file-view">{{ content_value if content_value is not none else "Файл не найден." }}</pre>
+</section>
+<details class="hint">
+    <summary>Подсказка</summary>
+    <div class="hint-content"><p>Посмотрите, как приложение объединяет базовую папку и введённый путь перед поиском файла. Нормализация может привести к каталогу за пределами корня.</p></div>
+</details>
+{% endblock %}

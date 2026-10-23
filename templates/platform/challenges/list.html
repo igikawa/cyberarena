@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Задания · CYBERARENA{% endblock %}
+{% block content %}
+<section class="hero">
+    <p class="eyebrow">Практика начинается здесь</p>
+    <h1>CTF-задания</h1>
+    <p class="lede">Исследуйте задачи, находите флаги и поднимайтесь в рейтинге.</p>
+</section>
+{% if challenges %}
+<section class="challenge-toolbar" aria-label="Сортировка и фильтры заданий">
+    <label>Сортировать по
+        <select id="challenge-sort" name="sort">
+            <option value="title">Названию</option>
+            <option value="category">Типу</option>
+            <option value="status">Статусу</option>
+        </select>
+    </label>
+    <label>Порядок
+        <select id="challenge-order" name="order">
+            <option value="asc">По возрастанию</option>
+            <option value="desc">По убыванию</option>
+        </select>
+    </label>
+    <label>Статус
+        <select id="challenge-status" name="status">
+            <option value="all">Все задания</option>
+            <option value="unsolved">Не решено</option>
+            <option value="solved">Решено</option>
+        </select>
+    </label>
+    <p id="challenge-count" class="muted" aria-live="polite"></p>
+</section>
+<div class="challenge-grid">
+    {% for challenge in challenges %}
+    <a class="challenge-card" href="/challenges/{{ challenge.id }}"
+       data-title="{{ challenge.title|lower }}"
+       data-category="{{ challenge.category|lower }}"
+       data-status="{{ 'solved' if challenge.is_solved else 'unsolved' }}">
+        <div class="card-top"><span class="tag">{{ challenge.category }}</span><span class="points">{{ challenge.points }} pts</span></div>
+        <h2>{{ challenge.title }}</h2>
+        <p>{{ challenge.description|truncate(150) }}</p>
+        <div class="card-bottom"><span>{{ "Решено" if challenge.is_solved else "Открыто" }}</span><span class="arrow">↗</span></div>
+    </a>
+    {% endfor %}
+</div>
+<p id="challenge-empty" class="empty-state" hidden>По выбранному фильтру заданий нет.</p>
+<script src="/static/challenges.js?v=2" defer></script>
+{% else %}
+<div class="empty-state"><h2>Заданий пока нет</h2><p>Загляните позже — новые испытания скоро появятся.</p></div>
+{% endif %}
+{% endblock %}

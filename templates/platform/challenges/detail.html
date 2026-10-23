@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ challenge.title }} · CYBERARENA{% endblock %}
+{% block content %}
+<a class="back-link" href="/challenges">← Все задания</a>
+<article class="detail-card">
+    <div class="card-top"><span class="tag">{{ challenge.category }}</span><span class="points">{{ challenge.points }} pts</span></div>
+    <h1>{{ challenge.title }}</h1>
+    <div class="prose">{{ challenge.description }}</div>
+    {% if challenge.resource_url %}
+    <p class="resource"><a class="button button-secondary" href="{{ challenge.resource_url }}" target="_blank" rel="noopener noreferrer">Открыть ресурс задания ↗</a></p>
+    {% else %}
+    <p class="muted">Для этого задания лабораторный ресурс не настроен.</p>
+    {% endif %}
+    {% if challenge.is_solved %}
+    <div class="notice notice-success">Задание решено — баллы уже учтены в рейтинге.</div>
+    {% elif user %}
+    <form method="post" action="/challenges/{{ challenge.id }}/submit" class="stack-form flag-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Флаг<input name="flag" autocomplete="off" maxlength="256" required placeholder="Введите найденный флаг"></label>
+        <button class="button" type="submit">Отправить флаг</button>
+    </form>
+    {% else %}
+    <p class="notice notice-info"><a href="/login">Войдите</a>, чтобы отправить флаг и сохранить решение.</p>
+    {% endif %}
+</article>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · WEB-01{% endblock %}
+{% block content %}
+<p class="eyebrow">WEB-01 · Контроль доступа</p>
+<a href="/lab/">← К заданиям лаборатории</a>
+<h1>{{ title }}</h1>
+<p class="lede">Внутренний портал документооборота · тестовая среда</p>
+<div class="task-meta"><span>Сложность: начальная</span><span>Сервис: Document Archive</span><span>Данные: синтетические</span></div>
+<section class="panel">
+    <h2>Карточка документа</h2>
+    <div class="terminal">ARCHIVE / DOCUMENT VIEWER<br>Access mode: authenticated employee<br>Status: record loaded</div>
+    <p>{{ body }}</p>
+</section>
+<details class="hint">
+    <summary>Подсказка</summary>
+    <div class="hint-content"><p>Сравните адреса карточек и идентификаторы документов. Попробуйте открыть запись, на которую обычный интерфейс не даёт прямой ссылки.</p></div>
+</details>
+{% endblock %}

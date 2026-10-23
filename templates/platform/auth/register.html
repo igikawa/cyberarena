@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Регистрация · CYBERARENA{% endblock %}
+{% block content %}
+<section class="auth-card">
+    <p class="eyebrow">Новый участник</p><h1>Регистрация</h1>
+    <form method="post" action="/register" class="stack-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Логин<input name="username" autocomplete="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_]+" required></label>
+        <label>Пароль<input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" required><small>Не менее 10 символов.</small></label>
+        <button class="button" type="submit">Создать аккаунт</button>
+    </form>
+    <p class="muted">Уже зарегистрированы? <a href="/login">Войти</a></p>
+</section>
+{% endblock %}

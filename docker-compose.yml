@@ -2,27 +2,28 @@ name: cyberarena
 
 services:
   nginx:
-    image: nginx:stable-alpine
+    image: nginx:1.28-alpine
+    user: "101:101"
     ports:
-      # Доступ только с локального компьютера, как требует кейс.
       - "127.0.0.1:8080:80"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/errors:/usr/share/nginx/html/errors:ro
     depends_on:
       app:
         condition: service_healthy
-      # Не блокируем запуск платформы, если лаборатория недоступна.
       lab-web:
         condition: service_started
     networks:
-      - app-net
+      - edge-net
+      - nginx-app-net
       - lab-net
     restart: unless-stopped
     read_only: true
     tmpfs:
-      - /var/cache/nginx:size=16m,noexec,nosuid,nodev
-      - /var/run:size=1m,noexec,nosuid,nodev
-      - /tmp:size=8m,noexec,nosuid,nodev
+      - /var/cache/nginx:size=16m,noexec,nosuid,nodev,uid=101,gid=101,mode=0700
+      - /var/run:size=1m,noexec,nosuid,nodev,uid=101,gid=101,mode=0700
+      - /tmp:size=8m,noexec,nosuid,nodev,uid=101,gid=101,mode=0700
     cap_drop:
       - ALL
     cap_add:
@@ -40,22 +41,29 @@ services:
 
   app:
     build:
-      context: ./platform
-      # Путь к Dockerfile платформы намеренно не задан.
-      # После согласования структуры можно добавить, например: dockerfile: path/to/Dockerfile
+      context: .
+      dockerfile: docker/platform/Dockerfile
     environment:
-      DATABASE_URL: sqlite:////data/cyberarena.db
-      APP_SECRET_KEY: ${APP_SECRET_KEY:?Укажите APP_SECRET_KEY в файле .env}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Укажите ADMIN_PASSWORD в файле .env}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      SECRET_KEY: ${SECRET_KEY}
+      FLAG_HMAC_KEY: ${FLAG_HMAC_KEY}
+      LAB_FLAGS_FILE: /run/cyberarena/lab-flags/flags.json
+      COOKIE_SECURE: ${COOKIE_SECURE}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      REDIS_URL: redis://${REDIS_USER}:${REDIS_USER_PASSWORD}@redis:6379/0
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
-    volumes:
-      # SQLite — встроенная БД в виде файла, а не отдельный серверный контейнер.
-      # Том доступен только основному приложению, но не Web-лаборатории.
-      - sqlite-data:/data
     networks:
       - app-net
+      - nginx-app-net
+    volumes:
+      - lab-flags:/run/cyberarena/lab-flags
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     init: true
     tmpfs:
@@ -78,14 +86,17 @@ services:
 
   lab-web:
     build:
-      context: ./lab
-      # Путь к Dockerfile лаборатории намеренно не задан.
-      # После согласования структуры можно добавить, например: dockerfile: path/to/Dockerfile
+      context: .
+      dockerfile: docker/lab/Dockerfile
     expose:
       - "8000"
     networks:
-      # ВАЖНО: лаборатория подключена только к lab-net; app-net и SQLite ей недоступны.
-      - lab-net
+      lab-net:
+        ipv4_address: 172.30.254.10
+    environment:
+      LAB_FLAGS_FILE: /run/cyberarena/lab-flags/flags.json
+    volumes:
+      - lab-flags:/run/cyberarena/lab-flags:ro
     restart: unless-stopped
     init: true
     user: "10001:10001"
@@ -110,13 +121,71 @@ services:
       retries: 3
       start_period: 15s
 
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 1.00
+
+  redis:
+    image: redis:7.4-alpine
+    user: "999:999"
+    environment:
+      REDIS_USER: ${REDIS_USER}
+      REDIS_USER_PASSWORD: ${REDIS_USER_PASSWORD}
+    networks:
+      - app-net
+    command:
+      - sh
+      - -c
+      - |
+        printf 'user default off\nuser %s on >%s ~cyberarena:* +get +set +del +incrby +ping +hello\n' "$$REDIS_USER" "$$REDIS_USER_PASSWORD" > /tmp/users.acl
+        exec redis-server --aclfile /tmp/users.acl --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --user \"$${REDIS_USER}\" --pass \"$${REDIS_USER_PASSWORD}\" ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 384m
+    cpus: 0.50
+
+
 volumes:
-  sqlite-data:
-    name: cyberarena-sqlite-data
+  postgres-data:
+    name: cyberarena-postgres-data
+  lab-flags:
+    name: cyberarena-lab-flags
 
 networks:
-  # Внутренние сети без прямого выхода в интернет.
+  edge-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
   app-net:
+    internal: true
+  nginx-app-net:
     internal: true
   lab-net:
     internal: true
+    ipam:
+      config:
+        - subnet: 172.30.254.0/24

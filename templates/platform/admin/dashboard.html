@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Администрирование · CYBERARENA{% endblock %}
+{% block content %}
+<section class="page-heading"><p class="eyebrow">Управление платформой</p><h1>Администрирование</h1></section>
+<div class="stat-grid"><a class="stat-card" href="/admin/challenges"><strong>{{ counts.challenges }}</strong><span>Задания</span></a><a class="stat-card" href="/admin/submissions"><strong>{{ counts.submissions }}</strong><span>Попытки</span></a><a class="stat-card" href="/admin/solves"><strong>{{ counts.solves }}</strong><span>Решения</span></a></div>
+<div class="admin-nav"><a href="/admin/challenges">Задания</a><a href="/admin/submissions">Попытки</a><a href="/admin/solves">Решения</a><a href="/admin/scoreboard">Рейтинг</a><a href="/api/admin/csvscoreboard">Экспорт рейтинга в CSV </a><a href="/admin/change-password">Сменить пароль</a></div>
+<section class="panel danger-zone"><h2>Сброс турнира</h2><p class="muted">Удаляются только попытки и решения. Пользователи и задания остаются. Это действие нельзя отменить.</p><form method="post" action="/admin/tournament/reset" onsubmit="return confirm('Сбросить турнир? Все попытки и решения будут удалены без возможности восстановления.')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button button-danger">Сбросить результаты</button></form></section>
+{% endblock %}

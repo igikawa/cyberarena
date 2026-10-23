@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Рейтинг · Администрирование{% endblock %}
+{% block content %}<section class="page-heading"><p class="eyebrow">Мониторинг</p><h1>Рейтинг участников</h1></section>
+<div class="table-wrap"><table><thead><tr><th>#</th><th>Участник</th><th>Баллы</th><th>Последнее решение</th></tr></thead><tbody>
+{% for row in rows %}<tr><td>{{ loop.index }}</td><td>{{ row.username }}</td><td class="points">{{ row.score }}</td><td>{{ row.last_solve.strftime("%Y-%m-%d %H:%M:%S UTC") if row.last_solve else "—" }}</td></tr>{% else %}<tr><td colspan="4" class="empty-cell">Пока нет данных.</td></tr>{% endfor %}
+</tbody></table></div>{% endblock %}

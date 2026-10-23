@@ -1,10 +1,32 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <title>Title</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>{% block title %}CYBERARENA{% endblock %}</title>
+    <link rel="stylesheet" href="/static/main.css?v=2">
 </head>
 <body>
-
+<header class="topbar">
+    <a class="brand" href="/challenges"><span class="brand-mark">C</span> CYBERARENA</a>
+    <nav aria-label="Основная навигация">
+        <a href="/challenges">Задания</a>
+        <a href="/scoreboard">Рейтинг</a>
+        {% if user %}
+            <a class="nav-cta" href="/profile">Профиль</a>
+            {% if user.is_admin %}<a class="button nav-admin" href="/admin">Админка</a>{% endif %}
+        {% else %}
+            <a href="/login">Войти</a>
+            <a class="nav-cta" href="/register">Регистрация</a>
+        {% endif %}
+    </nav>
+</header>
+<main class="container">
+    {% if flash %}<div class="notice notice-{{ flash.kind }}" role="status">{{ flash.message }}</div>{% endif %}
+    {% if error %}<div class="notice notice-error" role="alert">{{ error }}</div>{% endif %}
+    {% block content %}{% endblock %}
+</main>
+<footer class="footer"><span>CYBERARENA</span><span>Учись. Ищи. Решай.</span></footer>
 </body>
 </html>
