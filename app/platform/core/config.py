@@ -13,7 +13,10 @@ class Settings:
     redis_url: str | None
     secret_key: str
     flag_hmac_key: str
-    lab_flags_file: Path
+    lab_materials_url: str | None
+    lab_materials_secret: str | None
+    lab_manager_url: str | None
+    lab_manager_secret: str | None
     admin_username: str | None
     admin_password: str | None
     secure_cookies: bool
@@ -26,12 +29,36 @@ def get_settings() -> Settings:
     database_url = os.getenv("DATABASE_URL", "")
     secret_key = os.getenv("SECRET_KEY", "")
     flag_hmac_key = os.getenv("FLAG_HMAC_KEY", "")
+    lab_materials_url = os.getenv("LAB_MATERIALS_URL") or None
+    lab_materials_secret = os.getenv("LAB_MATERIALS_SECRET") or None
+    lab_manager_url = os.getenv("LAB_MANAGER_URL") or None
+    lab_manager_secret = os.getenv("LAB_MANAGER_SECRET") or None
     if not database_url:
         raise RuntimeError("DATABASE_URL must be configured")
     if len(secret_key) < 32 or len(flag_hmac_key) < 32:
         raise RuntimeError("SECRET_KEY and FLAG_HMAC_KEY must each contain at least 32 characters")
     if secret_key == flag_hmac_key:
         raise RuntimeError("SECRET_KEY and FLAG_HMAC_KEY must be different")
+    if lab_materials_url and (
+        not lab_materials_secret or len(lab_materials_secret) < 32
+    ):
+        raise RuntimeError(
+            "LAB_MATERIALS_SECRET must contain at least 32 characters when LAB_MATERIALS_URL is configured"
+        )
+    if lab_materials_secret and lab_materials_secret in {secret_key, flag_hmac_key}:
+        raise RuntimeError("LAB_MATERIALS_SECRET must be different from platform secrets")
+    if lab_manager_url and (
+        not lab_manager_secret or len(lab_manager_secret) < 32
+    ):
+        raise RuntimeError(
+            "LAB_MANAGER_SECRET must contain at least 32 characters when LAB_MANAGER_URL is configured"
+        )
+    if lab_manager_secret and lab_manager_secret in {
+        secret_key,
+        flag_hmac_key,
+        lab_materials_secret,
+    }:
+        raise RuntimeError("LAB_MANAGER_SECRET must be different from other platform secrets")
     admin_username = os.getenv("ADMIN_USERNAME") or None
     admin_password = os.getenv("ADMIN_PASSWORD") or None
     if not admin_username or not re.fullmatch(r"[A-Za-z0-9_]{3,32}", admin_username):
@@ -46,7 +73,10 @@ def get_settings() -> Settings:
         redis_url=os.getenv("REDIS_URL") or None,
         secret_key=secret_key,
         flag_hmac_key=flag_hmac_key,
-        lab_flags_file=Path(os.getenv("LAB_FLAGS_FILE", "/tmp/cyberarena-lab-flags.json")),
+        lab_materials_url=lab_materials_url,
+        lab_materials_secret=lab_materials_secret,
+        lab_manager_url=lab_manager_url,
+        lab_manager_secret=lab_manager_secret,
         admin_username=admin_username,
         admin_password=admin_password,
         secure_cookies=os.getenv("COOKIE_SECURE", "false").lower() == "true",

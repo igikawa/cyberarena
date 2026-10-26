@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from prometheus_client.parser import text_string_to_metric_families
 
 from app.lab.main import app as lab_app
 from app.platform.main import app as platform_app
@@ -17,8 +18,74 @@ from tests.conftest import (
     admin_client,
     create_challenge,
     csrf,
+    lab_manager_test_app,
     register,
 )
+
+
+def test_binary_challenges_are_seeded_and_start_through_the_personal_lab(
+    monkeypatch,
+    client: TestClient,
+):
+    from app.platform.routers import challenges as challenge_routes
+
+    register(client, "binaryplayer")
+    challenge_ids = {
+        item["resource_url"]: item["id"]
+        for item in client.get("/api/challenges").json()
+        if item["resource_url"] in {"/lab/reverse/", "/lab/pwn/"}
+    }
+    assert set(challenge_ids) == {"/lab/reverse/", "/lab/pwn/"}
+    assert lab_manager_test_app.state.materials["reverse-01"] == "CTF{reverse_the_machine}"
+    assert lab_manager_test_app.state.materials["pwn-01"] == "CTF{safe_vm_control}"
+    reverse_detail = client.get(f"/challenges/{challenge_ids['/lab/reverse/']}")
+    pwn_detail = client.get(f"/challenges/{challenge_ids['/lab/pwn/']}")
+    for detail in (reverse_detail, pwn_detail):
+        assert detail.status_code == 200
+        assert "Открыть лабораторию" in detail.text
+        assert "data-lab-start-form" in detail.text
+        assert "lab-start-status" in detail.text
+        assert "/static/lab-start.js?v=1" in detail.text
+
+    launched = []
+
+    async def fake_start_user_lab(user_id: int, challenge_key: str) -> str:
+        launched.append((user_id, challenge_key))
+        return "/lab-session/" + "a" * 40 + "/"
+
+    monkeypatch.setattr(challenge_routes, "start_user_lab", fake_start_user_lab)
+    for resource_url, challenge_key in (
+        ("/lab/reverse/", "reverse-01"),
+        ("/lab/pwn/", "pwn-01"),
+    ):
+        response = client.post(
+            f"/api/labs/{challenge_ids[resource_url]}/start",
+            headers={"X-CSRF-Token": csrf(client)},
+        )
+        assert response.status_code == 200
+        assert response.json()["access_path"] == "/lab-session/" + "a" * 40 + "/"
+    assert [key for _, key in launched] == ["reverse-01", "pwn-01"]
+
+    admin_client(client)
+    for resource_url, challenge_key, flag in (
+        ("/lab/reverse/", "reverse-01", "CTF{updated_reverse_flag}"),
+        ("/lab/pwn/", "pwn-01", "CTF{updated_safevm_flag}"),
+    ):
+        response = client.patch(
+            f"/api/admin/challenges/{challenge_ids[resource_url]}",
+            json={"flag": flag},
+            headers={"X-CSRF-Token": csrf(client)},
+        )
+        assert response.status_code == 200
+        assert lab_manager_test_app.state.materials[challenge_key] == flag
+
+
+def test_lab_manager_request_timeouts_allow_for_sandbox_startup():
+    from app.platform.services import labs
+    from app.platform.services.task_materials import LAB_MATERIALS_HTTP_TIMEOUT
+
+    assert LAB_MATERIALS_HTTP_TIMEOUT.read >= 60
+    assert labs.LAB_MANAGER_HTTP_TIMEOUT.read >= 60
 
 
 def test_registration_and_duplicate_username(client: TestClient):
@@ -92,6 +159,126 @@ def test_lab_browser_errors_are_html():
     assert response.status_code == 404
     assert response.headers["content-type"].startswith("text/html")
     assert "Страница не найдена" in response.text
+
+
+def test_user_lab_does_not_expose_material_update_api():
+    import app.lab.main as lab
+
+    original_materials = lab.LAB_MATERIALS
+    try:
+        lab.LAB_MATERIALS = {"web-01": "CTF{isolated_lab_material}"}
+        with TestClient(lab_app) as lab_client:
+            assert lab_client.get("/internal/materials").status_code == 404
+            assert lab_client.post(
+                "/internal/materials",
+                json={"materials": {"web-01": "CTF{attacker_controlled}"}},
+            ).status_code == 404
+            assert "CTF{isolated_lab_material}" in lab_client.get("/documents/1002").text
+    finally:
+        lab.LAB_MATERIALS = original_materials
+
+
+def test_lab_templates_preserve_capability_prefix(monkeypatch):
+    import app.lab.main as lab
+
+    monkeypatch.setattr(
+        lab,
+        "LAB_MATERIALS",
+        {
+            "web-01": "CTF{web01}",
+            "web-03-sqli": "CTF{web03}",
+            "web-04-path-traversal": "CTF{web04}",
+            "business-01": "CTF{business01}",
+        },
+    )
+    prefix = f"/lab-session/{'A' * 43}"
+    with TestClient(lab_app) as lab_client:
+        home = lab_client.get(
+            "/",
+            headers={"X-Lab-Base-Path": prefix},
+        )
+        shop = lab_client.get(
+            "/shop/",
+            headers={"X-Lab-Base-Path": prefix},
+        )
+
+    assert f'href="{prefix}/documents/1001"' in home.text
+    assert f'action="{prefix}/shop/checkout"' in shop.text
+
+
+def test_prometheus_metrics_cover_http_and_ctf_events(client: TestClient):
+    admin_client(client)
+    challenge_id = create_challenge(client, "CTF{metrics-test}")
+    client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf(client)})
+    register(client, "metricsplayer")
+
+    submit_url = f"/api/challenges/{challenge_id}/submit"
+    client.post(
+        submit_url,
+        json={"flag": "CTF{metrics-test}"},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    client.post(
+        submit_url,
+        json={"flag": "CTF{metrics-test}"},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    client.post(
+        submit_url,
+        json={"flag": "CTF{wrong-metrics-test}"},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+
+    metrics_response = client.get("/metrics")
+    assert metrics_response.status_code == 200
+    assert metrics_response.headers["content-type"].startswith("text/plain")
+    samples = [
+        sample
+        for family in text_string_to_metric_families(metrics_response.text)
+        for sample in family.samples
+    ]
+    assert any(
+        sample.name == "cyberarena_http_requests_total"
+        and sample.labels
+        == {
+            "method": "POST",
+            "route": "/api/auth/register",
+            "status": "201",
+        }
+        for sample in samples
+    )
+    assert any(
+        sample.name == "cyberarena_http_requests_total"
+        and sample.labels
+        == {
+            "method": "POST",
+            "route": "/api/challenges/{challenge_id}/submit",
+            "status": "200",
+        }
+        for sample in samples
+    )
+    assert all(
+        any(
+            sample.name == "cyberarena_flag_submissions_total"
+            and sample.labels == {"result": result}
+            and sample.value >= 1
+            for sample in samples
+        )
+        for result in ("correct", "already_solved", "incorrect")
+    )
+    assert any(
+        sample.name == "cyberarena_solves_awarded_total" and sample.value >= 1
+        for sample in samples
+    )
+    assert any(
+        sample.name == "cyberarena_registrations_total" and sample.value >= 1
+        for sample in samples
+    )
+    assert any(
+        sample.name == "cyberarena_http_request_duration_seconds_bucket"
+        and sample.labels.get("route") == "/api/challenges/{challenge_id}/submit"
+        for sample in samples
+    )
 
 
 def test_login_success_and_failure(client: TestClient):
@@ -423,6 +610,9 @@ def test_seeded_challenges_and_local_resources(client: TestClient):
 
 def test_rotating_seed_flags_updates_task_materials_and_validation(client: TestClient):
     admin_client(client)
+    import app.lab.main as lab_app_module
+
+    original_materials = lab_app_module.LAB_MATERIALS
     challenges = client.get("/api/admin/challenges").json()
     seeded = {
         challenge["resource_url"]: challenge["id"]
@@ -452,63 +642,83 @@ def test_rotating_seed_flags_updates_task_materials_and_validation(client: TestC
         )
         assert response.status_code == 200, response.text
 
-    with TestClient(lab_app) as lab:
-        web01_document = lab.get("/documents/1002").text
-        assert new_flags["/lab/"] in web01_document
-        assert old_flags["/lab/"] not in web01_document
+    try:
+        assert lab_manager_test_app.state.materials["web-01"] == new_flags["/lab/"]
+        lab_app_module.LAB_MATERIALS = dict(lab_manager_test_app.state.materials)
+        with TestClient(lab_app) as lab:
+            web01_document = lab.get("/documents/1002").text
+            assert new_flags["/lab/"] in web01_document
+            assert old_flags["/lab/"] not in web01_document
 
-    web02_page = client.get("/static/tasks/web02/index.html")
-    web02_script = client.get("/static/tasks/web02/clue.js")
-    assert "/static/tasks/web02/clue.js" in web02_page.text
-    assert new_flags["/static/tasks/web02/index.html"] in web02_script.text
-    assert old_flags["/static/tasks/web02/index.html"] not in web02_script.text
+        web02_page = client.get("/static/tasks/web02/index.html")
+        web02_script = client.get("/static/tasks/web02/clue.js")
+        assert "/static/tasks/web02/clue.js" in web02_page.text
+        assert new_flags["/static/tasks/web02/index.html"] in web02_script.text
+        assert old_flags["/static/tasks/web02/index.html"] not in web02_script.text
 
-    crypto_text = client.get("/tasks/crypto01/download").text
-    encoded_flag = crypto_text.split("Ciphertext: ", 1)[1].strip()
-    decoded_flag = "".join(
-        chr((ord(char) - ord("A" if char.isupper() else "a") - 3) % 26 + ord("A" if char.isupper() else "a"))
-        if char.isascii() and char.isalpha()
-        else char
-        for char in encoded_flag
-    )
-    assert decoded_flag == new_flags["/tasks/crypto01/download"]
-    assert decoded_flag != old_flags["/tasks/crypto01/download"]
-
-    for resource_url, flag in new_flags.items():
-        old_response = client.post(
-            f"/api/challenges/{seeded[resource_url]}/submit",
-            json={"flag": old_flags[resource_url]},
-            headers={"X-CSRF-Token": csrf(client)},
+        crypto_text = client.get("/tasks/crypto01/download").text
+        encoded_flag = crypto_text.split("Ciphertext: ", 1)[1].strip()
+        decoded_flag = "".join(
+            chr((ord(char) - ord("A" if char.isupper() else "a") - 3) % 26 + ord("A" if char.isupper() else "a"))
+            if char.isascii() and char.isalpha()
+            else char
+            for char in encoded_flag
         )
-        assert old_response.status_code == 200
-        assert old_response.json()["is_correct"] is False
-        response = client.post(
-            f"/api/challenges/{seeded[resource_url]}/submit",
-            json={"flag": flag},
-            headers={"X-CSRF-Token": csrf(client)},
-        )
-        assert response.status_code == 200
-        assert response.json()["is_correct"] is True
+        assert decoded_flag == new_flags["/tasks/crypto01/download"]
+        assert decoded_flag != old_flags["/tasks/crypto01/download"]
+
+        for resource_url, flag in new_flags.items():
+            old_response = client.post(
+                f"/api/challenges/{seeded[resource_url]}/submit",
+                json={"flag": old_flags[resource_url]},
+                headers={"X-CSRF-Token": csrf(client)},
+            )
+            assert old_response.status_code == 200
+            assert old_response.json()["is_correct"] is False
+            response = client.post(
+                f"/api/challenges/{seeded[resource_url]}/submit",
+                json={"flag": flag},
+                headers={"X-CSRF-Token": csrf(client)},
+            )
+            assert response.status_code == 200
+            assert response.json()["is_correct"] is True
+    finally:
+        lab_app_module.LAB_MATERIALS = original_materials
 
 
 def test_isolated_web_lab_idor_and_allowlisted_documents(client: TestClient):
-    with TestClient(lab_app) as lab:
-        home = lab.get("/")
-        assert home.status_code == 200
-        assert "WEB · IDOR" in home.text
-        assert "SQL" in home.text
-        assert "Начать исследование" in home.text
-        document = lab.get("/documents/1001")
-        assert document.status_code == 200
-        assert "<summary>Подсказка</summary>" in document.text
-        exposed = lab.get("/documents/1002")
-        assert exposed.status_code == 200
-        assert "CTF{idor_hidden_document}" in exposed.text
-        assert lab.get("/documents/1003").status_code == 404
+    import app.lab.main as lab_app_module
+
+    original_materials = lab_app_module.LAB_MATERIALS
+    lab_app_module.LAB_MATERIALS = {"web-01": "CTF{idor_hidden_document}"}
+    try:
+        with TestClient(lab_app) as lab:
+            home = lab.get("/")
+            assert home.status_code == 200
+            assert "WEB · IDOR" in home.text
+            assert 'href="/sql/"' in home.text
+            assert "Начать исследование" in home.text
+            document = lab.get("/documents/1001")
+            assert document.status_code == 200
+            assert "<summary>Подсказка</summary>" in document.text
+            exposed = lab.get("/documents/1002")
+            assert exposed.status_code == 200
+            assert "CTF{idor_hidden_document}" in exposed.text
+            assert lab.get("/documents/1003").status_code == 404
+    finally:
+        lab_app_module.LAB_MATERIALS = original_materials
 
 
 def test_new_lab_challenges_are_isolated_and_flags_rotate(client: TestClient):
     admin_client(client)
+    import app.lab.main as lab_app_module
+
+    original_materials = lab_app_module.LAB_MATERIALS
+    lab_app_module.LAB_MATERIALS = {
+        "web-03-sqli": "CTF{union_of_synthetic_records}",
+        "web-04-path-traversal": "CTF{virtual_paths_only}",
+        "business-01": "CTF{negative_quantity_credit}",
+    }
     challenge_by_seed_url = {
         challenge["resource_url"]: challenge["id"]
         for challenge in client.get("/api/admin/challenges").json()
@@ -518,72 +728,77 @@ def test_new_lab_challenges_are_isolated_and_flags_rotate(client: TestClient):
         "/lab/files/": ("web-04-path-traversal", "CTF{virtual_paths_only}", "CTF{path_rotated}"),
         "/lab/shop/": ("business-01", "CTF{negative_quantity_credit}", "CTF{business_rotated}"),
     }
-    with TestClient(lab_app) as lab:
-        assert "/lab/sql/" in lab.get("/").text
-        normal_search = lab.get("/sql/", params={"username": "maria"})
-        assert "CTF{" not in normal_search.text
-        assert "<summary>Подсказка</summary>" in normal_search.text
-        sql_injection = lab.get("/sql/", params={"username": "' OR 1=1 --"})
-        assert sql_injection.status_code == 200
-        assert "CTF{union_of_synthetic_records}" in sql_injection.text
-
-        public_file = lab.get("/files/", params={"path": "readme.txt"})
-        assert "Публичная папка лаборатории" in public_file.text
-        assert "<summary>Подсказка</summary>" in public_file.text
-        traversal = lab.get("/files/", params={"path": "../../private/flag.txt"})
-        assert traversal.status_code == 200
-        assert "CTF{virtual_paths_only}" in traversal.text
-        assert "README.md" not in traversal.text
-        outside_virtual_files = lab.get("/files/", params={"path": "../../etc/passwd"})
-        assert "Файл не найден" in outside_virtual_files.text
-        assert "root:" not in outside_virtual_files.text
-
-        normal_purchase = lab.post("/shop/checkout", data={"quantity": "1"})
-        assert normal_purchase.status_code == 200
-        assert "Недостаточно кредитов" in normal_purchase.text
-        assert "<summary>Подсказка</summary>" in normal_purchase.text
-        exploit_purchase = lab.post("/shop/checkout", data={"quantity": "-1"})
-        assert exploit_purchase.status_code == 200
-        assert "CTF{negative_quantity_credit}" in exploit_purchase.text
-        invalid_purchase = lab.post("/shop/checkout", data={"quantity": "not-a-number"})
-        assert invalid_purchase.status_code == 422
-        assert "Количество должно быть целым числом" in invalid_purchase.text
-        missing_quantity = lab.post("/shop/checkout", data={})
-        assert missing_quantity.status_code == 422
-        assert "Количество должно быть целым числом" in missing_quantity.text
-
-    for index, (resource_url, (_, old_flag, new_flag)) in enumerate(lab_urls.items()):
-        challenge_id = challenge_by_seed_url[resource_url]
-        changed = client.patch(
-            f"/api/admin/challenges/{challenge_id}",
-            json={"flag": new_flag},
-            headers={"X-CSRF-Token": csrf(client)},
-        )
-        assert changed.status_code == 200, changed.text
+    try:
         with TestClient(lab_app) as lab:
-            if resource_url == "/lab/sql/":
-                material = lab.get("/sql/", params={"username": "' OR 1=1 --"}).text
-            elif resource_url == "/lab/files/":
-                material = lab.get("/files/", params={"path": "../../private/flag.txt"}).text
-            else:
-                material = lab.post("/shop/checkout", data={"quantity": "-1"}).text
-        assert new_flag in material
-        assert old_flag not in material
+            assert 'href="/sql/"' in lab.get("/").text
+            normal_search = lab.get("/sql/", params={"username": "maria"})
+            assert "CTF{" not in normal_search.text
+            assert "<summary>Подсказка</summary>" in normal_search.text
+            sql_injection = lab.get("/sql/", params={"username": "' OR 1=1 --"})
+            assert sql_injection.status_code == 200
+            assert "CTF{union_of_synthetic_records}" in sql_injection.text
 
-        with TestClient(platform_app) as player:
-            register(player, f"solver{index}")
-            rejected = player.post(
-                f"/api/challenges/{challenge_id}/submit",
-                json={"flag": old_flag},
-                headers={"X-CSRF-Token": csrf(player)},
-            )
-            accepted = player.post(
-                f"/api/challenges/{challenge_id}/submit",
+            public_file = lab.get("/files/", params={"path": "readme.txt"})
+            assert "Публичная папка лаборатории" in public_file.text
+            assert "<summary>Подсказка</summary>" in public_file.text
+            traversal = lab.get("/files/", params={"path": "../../private/flag.txt"})
+            assert traversal.status_code == 200
+            assert "CTF{virtual_paths_only}" in traversal.text
+            assert "README.md" not in traversal.text
+            outside_virtual_files = lab.get("/files/", params={"path": "../../etc/passwd"})
+            assert "Файл не найден" in outside_virtual_files.text
+            assert "root:" not in outside_virtual_files.text
+
+            normal_purchase = lab.post("/shop/checkout", data={"quantity": "1"})
+            assert normal_purchase.status_code == 200
+            assert "Недостаточно кредитов" in normal_purchase.text
+            assert "<summary>Подсказка</summary>" in normal_purchase.text
+            exploit_purchase = lab.post("/shop/checkout", data={"quantity": "-1"})
+            assert exploit_purchase.status_code == 200
+            assert "CTF{negative_quantity_credit}" in exploit_purchase.text
+            invalid_purchase = lab.post("/shop/checkout", data={"quantity": "not-a-number"})
+            assert invalid_purchase.status_code == 422
+            assert "Количество должно быть целым числом" in invalid_purchase.text
+            missing_quantity = lab.post("/shop/checkout", data={})
+            assert missing_quantity.status_code == 422
+            assert "Количество должно быть целым числом" in missing_quantity.text
+
+        for index, (resource_url, (seed_key, old_flag, new_flag)) in enumerate(lab_urls.items()):
+            challenge_id = challenge_by_seed_url[resource_url]
+            changed = client.patch(
+                f"/api/admin/challenges/{challenge_id}",
                 json={"flag": new_flag},
-                headers={"X-CSRF-Token": csrf(player)},
+                headers={"X-CSRF-Token": csrf(client)},
             )
-            assert rejected.status_code == 200 and rejected.json()["is_correct"] is False
-            assert accepted.status_code == 200 and accepted.json()["is_correct"] is True
+            assert changed.status_code == 200, changed.text
+            assert lab_manager_test_app.state.materials[seed_key] == new_flag
+            lab_app_module.LAB_MATERIALS[seed_key] = new_flag
+            with TestClient(lab_app) as lab:
+                if resource_url == "/lab/sql/":
+                    material = lab.get("/sql/", params={"username": "' OR 1=1 --"}).text
+                elif resource_url == "/lab/files/":
+                    material = lab.get("/files/", params={"path": "../../private/flag.txt"}).text
+                else:
+                    material = lab.post("/shop/checkout", data={"quantity": "-1"}).text
+            assert new_flag in material
+            assert old_flag not in material
+
+            with TestClient(platform_app) as player:
+                register(player, f"solver{index}")
+                rejected = player.post(
+                    f"/api/challenges/{challenge_id}/submit",
+                    json={"flag": old_flag},
+                    headers={"X-CSRF-Token": csrf(player)},
+                )
+                accepted = player.post(
+                    f"/api/challenges/{challenge_id}/submit",
+                    json={"flag": new_flag},
+                    headers={"X-CSRF-Token": csrf(player)},
+                )
+                assert rejected.status_code == 200 and rejected.json()["is_correct"] is False
+                assert accepted.status_code == 200 and accepted.json()["is_correct"] is True
+    finally:
+        lab_app_module.LAB_MATERIALS = original_materials
 
 
 def test_admin_html_lifecycle_and_tournament_reset(client: TestClient):

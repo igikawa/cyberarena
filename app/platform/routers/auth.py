@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.platform.core.config import get_settings
 from app.platform.core.security import new_csrf_token
 from app.platform.dependencies import current_user, password_change_admin, require_csrf
+from app.platform.metrics import REGISTRATIONS
 from app.platform.models import AuthSession, User
 from app.platform.schemas import AdminPasswordChange, Credentials
 from app.platform.services.auth import UsernameUnavailable, authenticate_user, change_admin_password, register_user
@@ -49,6 +50,7 @@ async def register(
         user = await register_user(db, credentials)
     except UsernameUnavailable:
         raise HTTPException(status_code=409, detail="Username is unavailable") from None
+    REGISTRATIONS.inc()
     await create_session(db, response, user, request.cookies.get("cyberarena_csrf"))
     return {"user": user_view(user)}
 

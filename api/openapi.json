@@ -304,6 +304,49 @@
         }
       }
     },
+    "/api/labs/{challenge_id}/start": {
+      "post": {
+        "summary": "Start Lab Api",
+        "operationId": "start_lab_api_api_labs__challenge_id__start_post",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Start Lab Api Api Labs  Challenge Id  Start Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/scoreboard": {
       "get": {
         "summary": "Scoreboard",
@@ -871,6 +914,43 @@
       "get": {
         "summary": "Challenge Page",
         "operationId": "challenge_page_challenges__challenge_id__get",
+        "parameters": [
+          {
+            "name": "challenge_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Challenge Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/challenges/{challenge_id}/lab/start": {
+      "post": {
+        "summary": "Start Lab Form",
+        "operationId": "start_lab_form_challenges__challenge_id__lab_start_post",
         "parameters": [
           {
             "name": "challenge_id",

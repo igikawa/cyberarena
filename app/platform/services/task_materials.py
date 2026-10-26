@@ -1,7 +1,4 @@
-import json
-import os
-import tempfile
-from pathlib import Path
+import httpx
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -16,7 +13,19 @@ LAB_SEED_KEYS = (
     "web-03-sqli",
     "web-04-path-traversal",
     "business-01",
+    "reverse-01",
+    "pwn-01",
 )
+LAB_MATERIALS_HTTP_TIMEOUT = httpx.Timeout(
+    connect=3.0,
+    read=60.0,
+    write=10.0,
+    pool=3.0,
+)
+
+
+def create_lab_material_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=LAB_MATERIALS_HTTP_TIMEOUT)
 
 
 async def get_seeded_flag(db: AsyncSession, seed_key: str) -> str:
@@ -27,6 +36,11 @@ async def get_seeded_flag(db: AsyncSession, seed_key: str) -> str:
 
 
 async def refresh_lab_flags(db: AsyncSession) -> None:
+    settings = get_settings()
+    if not settings.lab_materials_url:
+        return
+    if settings.lab_materials_secret is None:
+        raise HTTPException(status_code=503, detail="Laboratory materials synchronization is not configured")
     challenges = (
         await db.scalars(select(Challenge).where(Challenge.seed_key.in_(LAB_SEED_KEYS)))
     ).all()
@@ -35,20 +49,16 @@ async def refresh_lab_flags(db: AsyncSession) -> None:
         for challenge in challenges
         if challenge.seed_key is not None and challenge.flag_encrypted is not None
     }
-    target = get_settings().lab_flags_file
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=target.parent,
-        prefix=".lab-flags-",
-        delete=False,
-    )
-    temporary_path = Path(temporary.name)
     try:
-        with temporary:
-            json.dump(flags, temporary)
-            temporary.write("\n")
-        os.replace(temporary_path, target)
-    finally:
-        temporary_path.unlink(missing_ok=True)
+        async with create_lab_material_client() as client:
+            response = await client.put(
+                settings.lab_materials_url,
+                json={"materials": flags},
+                headers={"X-Lab-Materials-Secret": settings.lab_materials_secret},
+            )
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Laboratory materials could not be synchronized",
+        ) from exc

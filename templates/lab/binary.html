@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · CYBERARENA{% endblock %}
+{% block content %}
+<section class="hero">
+    <p class="eyebrow">{% if task == "reverse" %}Reverse Engineering · ELF{% else %}Binary · Safe VM{% endif %}</p>
+    <h1>{{ title }}</h1>
+    {% if task == "reverse" %}
+    <p class="lede">Восстановите принимаемую строку, анализируя ELF. Бинарник ничего не запускает и не обращается к сети.</p>
+    {% else %}
+    <p class="lede">Перед вами ограниченная виртуальная машина. Это модель управления состоянием, не уязвимый native-код.</p>
+    {% endif %}
+</section>
+<section class="panel">
+    {% if task == "reverse" %}
+    <h2>Исследование ELF</h2>
+    <p>Скачайте файл и найдите проверяемую строку. Сервис запускает только фиксированный проверяльщик с ограниченным аргументом.</p>
+    <p><a class="button" href="{{ lab_base_path }}/reverse/download">Скачать revcheck</a></p>
+    <form class="task-form" method="post" action="{{ lab_base_path }}/reverse/submit">
+        <label>Найденная строка<input name="answer" maxlength="48" autocomplete="off" required></label>
+        <button type="submit">Проверить</button>
+    </form>
+    {% else %}
+    <h2>Программа для SafeVM</h2>
+    <p>Скачайте ELF и изучите формат программы. Ввод — hex-строка до 32 байт; VM принимает только ограниченный набор инструкций и завершает выполнение на границах программы.</p>
+    <p><a class="button" href="{{ lab_base_path }}/pwn/download">Скачать safevm</a></p>
+    <form class="task-form" method="post" action="{{ lab_base_path }}/pwn/submit">
+        <label>Байткод в hex<textarea name="program" maxlength="128" rows="3" required></textarea></label>
+        <button type="submit">Запустить в SafeVM</button>
+    </form>
+    {% endif %}
+    {% if result %}
+    <div class="notice notice-info" role="status">{{ result }}</div>
+    {% endif %}
+    <p>Флаг показывается только после успешной проверки и относится только к этому заданию.</p>
+</section>
+{% endblock %}
