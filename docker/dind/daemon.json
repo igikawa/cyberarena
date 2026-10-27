@@ -1,0 +1,10 @@
+{
+  "default-runtime": "runc",
+  "runtimes": {
+    "runsc": {
+      "path": "/usr/local/bin/runsc"
+    }
+  },
+  "icc": false,
+  "live-restore": true
+}

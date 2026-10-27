@@ -2,35 +2,59 @@
 {% block title %}Архив документов · CYBERARENA{% endblock %}
 {% block content %}
 <section class="hero">
-    <p class="eyebrow">Практический трек · 4 задания</p>
+    <p class="eyebrow">Практический трек · личная лаборатория</p>
     <h1>Лаборатория</h1>
     <p class="lede">Изучайте веб-уязвимости и бизнес-логику на изолированных учебных сервисах. Все данные синтетические, а флаги проверяются на платформе.</p>
 </section>
 <div class="challenge-grid">
-    <a class="challenge-card" href="/lab/documents/1001">
+    {% if not challenge_key or challenge_key == "web-01" %}
+    <a class="challenge-card" href="{{ lab_base_path }}/documents/1001">
         <div class="card-top"><span class="tag">WEB · IDOR</span><span class="points">100 pts</span></div>
         <h2>Архив документов</h2>
         <p>Проверьте контроль доступа к записям внутреннего портала.</p>
         <div class="card-bottom"><span>Начать исследование</span><span>↗</span></div>
     </a>
-    <a class="challenge-card" href="/lab/sql/">
+    {% endif %}
+    {% if not challenge_key or challenge_key == "web-03-sqli" %}
+    <a class="challenge-card" href="{{ lab_base_path }}/sql/">
         <div class="card-top"><span class="tag">WEB · SQL</span><span class="points">200 pts</span></div>
         <h2>Архив сотрудников</h2>
         <p>Исследуйте поиск по локальному каталогу и поведение фильтра.</p>
         <div class="card-bottom"><span>Начать исследование</span><span>↗</span></div>
     </a>
-    <a class="challenge-card" href="/lab/files/">
+    {% endif %}
+    {% if not challenge_key or challenge_key == "web-04-path-traversal" %}
+    <a class="challenge-card" href="{{ lab_base_path }}/files/">
         <div class="card-top"><span class="tag">WEB · FILES</span><span class="points">200 pts</span></div>
         <h2>За пределами папки</h2>
         <p>Проверьте, как файловый просмотрщик нормализует переданный путь.</p>
         <div class="card-bottom"><span>Начать исследование</span><span>↗</span></div>
     </a>
-    <a class="challenge-card" href="/lab/shop/">
+    {% endif %}
+    {% if not challenge_key or challenge_key == "business-01" %}
+    <a class="challenge-card" href="{{ lab_base_path }}/shop/">
         <div class="card-top"><span class="tag">BUSINESS LOGIC</span><span class="points">200 pts</span></div>
         <h2>Магазин с ошибкой</h2>
         <p>Оцените расчёт заказа, баланс и границы доверия к вводу.</p>
         <div class="card-bottom"><span>Начать исследование</span><span>↗</span></div>
     </a>
+    {% endif %}
+    {% if not challenge_key or challenge_key == "reverse-01" %}
+    <a class="challenge-card" href="{{ lab_base_path }}/reverse/">
+        <div class="card-top"><span class="tag">REVERSE · ELF</span><span class="points">250 pts</span></div>
+        <h2>Машина состояний</h2>
+        <p>Изучите небольшой ELF и восстановите строку, которую принимает проверяльщик.</p>
+        <div class="card-bottom"><span>Открыть бинарник</span><span>↗</span></div>
+    </a>
+    {% endif %}
+    {% if not challenge_key or challenge_key == "pwn-01" %}
+    <a class="challenge-card" href="{{ lab_base_path }}/pwn/">
+        <div class="card-top"><span class="tag">PWN · SAFE VM</span><span class="points">250 pts</span></div>
+        <h2>Пульт управления</h2>
+        <p>Составьте программу для ограниченной виртуальной машины и достигните целевого состояния.</p>
+        <div class="card-bottom"><span>Открыть задание</span><span>↗</span></div>
+    </a>
+    {% endif %}
 </div>
 <section class="panel">
     <h2>Правила лаборатории</h2>

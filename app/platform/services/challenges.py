@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.platform.core.security import encrypt_flag, hash_flag, verify_flag
 from app.platform.models import Challenge, DeletedChallengeSeed, Solve, Submission, User
+from app.platform.metrics import FLAG_SUBMISSIONS, SOLVES_AWARDED
 from app.platform.schemas import ChallengeInput, ChallengePatch, validate_flag_value
 from app.platform.services.cache import (
     CHALLENGES_CACHE_KEY,
@@ -64,7 +65,14 @@ async def update_challenge(
     await db.refresh(challenge)
     await invalidate_challenges_cache(cache)
     await invalidate_scoreboard_cache(cache)
-    if flag and challenge.seed_key in {"web-01", "web-03-sqli", "web-04-path-traversal", "business-01"}:
+    if flag and challenge.seed_key in {
+        "web-01",
+        "web-03-sqli",
+        "web-04-path-traversal",
+        "business-01",
+        "reverse-01",
+        "pwn-01",
+    }:
         from app.platform.services.task_materials import refresh_lab_flags
 
         await refresh_lab_flags(db)
@@ -86,7 +94,14 @@ async def delete_challenge(
     await db.commit()
     await invalidate_challenges_cache(cache)
     await invalidate_scoreboard_cache(cache)
-    if challenge.seed_key in {"web-01", "web-03-sqli", "web-04-path-traversal", "business-01"}:
+    if challenge.seed_key in {
+        "web-01",
+        "web-03-sqli",
+        "web-04-path-traversal",
+        "business-01",
+        "reverse-01",
+        "pwn-01",
+    }:
         from app.platform.services.task_materials import refresh_lab_flags
 
         await refresh_lab_flags(db)
@@ -176,7 +191,9 @@ async def submit_flag(
         db.add(Solve(user_id=user.id, challenge_id=challenge.id, solved_at=now))
         result = {"status": "correct", "is_correct": True, "awarded": True, "points": challenge.points}
     await db.commit()
+    FLAG_SUBMISSIONS.labels(result=result["status"]).inc()
     if result["status"] == "correct":
+        SOLVES_AWARDED.inc()
         await invalidate_scoreboard_cache(cache)
     return result
 

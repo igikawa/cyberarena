@@ -3,7 +3,9 @@ import os
 import tempfile
 from pathlib import Path
 
+import httpx
 import pytest
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -22,15 +24,47 @@ else:
     os.environ.setdefault("DATABASE_URL", TEST_DATABASE_URL)
 os.environ.setdefault("SECRET_KEY", "test-secret-key-that-is-at-least-32-characters-long")
 os.environ.setdefault("FLAG_HMAC_KEY", "test-flag-hmac-key-that-is-at-least-32-characters-long")
+os.environ["LAB_MATERIALS_SECRET"] = "test-lab-materials-secret-that-is-at-least-32-characters"
+os.environ["LAB_MATERIALS_URL"] = "http://lab-manager:8000/internal/materials"
+os.environ["LAB_MANAGER_SECRET"] = "test-lab-manager-secret-that-is-at-least-32-characters"
+os.environ["LAB_MANAGER_URL"] = "http://lab-manager:8000"
 os.environ.setdefault("ADMIN_USERNAME", "admin")
 os.environ.setdefault("ADMIN_PASSWORD", "testing-admin-password-strong")
 os.environ.setdefault("COOKIE_SECURE", "false")
 
 from app.platform.main import app
 from app.platform.models import Base
+from app.platform.services import task_materials
+
+REAL_ASYNC_CLIENT = httpx.AsyncClient
+lab_manager_test_app = FastAPI()
+lab_manager_test_app.state.materials = {}
+
+
+@lab_manager_test_app.put("/internal/materials")
+async def receive_lab_materials(
+    request: Request,
+    secret: str | None = Header(default=None, alias="X-Lab-Materials-Secret"),
+):
+    if secret != os.environ["LAB_MATERIALS_SECRET"]:
+        raise HTTPException(status_code=401)
+    lab_manager_test_app.state.materials = (await request.json())["materials"]
+    return {"status": "updated"}
+
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    lab_manager_test_app.state.materials = {}
+    monkeypatch.setattr(
+        task_materials,
+        "create_lab_material_client",
+        lambda: REAL_ASYNC_CLIENT(
+            transport=httpx.ASGITransport(app=lab_manager_test_app),
+            base_url="http://lab-manager",
+            timeout=5.0,
+        ),
+    )
+
     async def reset_database():
         engine = create_async_engine(TEST_DATABASE_URL)
         async with engine.begin() as connection:

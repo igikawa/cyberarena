@@ -12,12 +12,15 @@ services:
     depends_on:
       app:
         condition: service_healthy
-      lab-web:
+      lab-manager:
+        condition: service_healthy
+      grafana:
         condition: service_started
     networks:
       - edge-net
       - nginx-app-net
-      - lab-net
+      - lab-proxy-net
+      - grafana-proxy-net
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -39,6 +42,62 @@ services:
       retries: 3
       start_period: 10s
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - app-metrics-net
+      - lab-metrics-net
+      - grafana-prometheus-net
+    restart: unless-stopped
+    user: "65534:65534"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 0.50
+    pids_limit: 64
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_SERVER_ROOT_URL: http://localhost:8080/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - grafana-proxy-net
+      - grafana-prometheus-net
+    restart: unless-stopped
+    user: "472:472"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev,uid=472,gid=472,mode=0700
+      - /var/log/grafana:size=16m,noexec,nosuid,nodev,uid=472,gid=472,mode=0700
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 64
+
   app:
     build:
       context: .
@@ -47,7 +106,10 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       SECRET_KEY: ${SECRET_KEY}
       FLAG_HMAC_KEY: ${FLAG_HMAC_KEY}
-      LAB_FLAGS_FILE: /run/cyberarena/lab-flags/flags.json
+      LAB_MATERIALS_URL: http://lab-manager:8000/internal/materials
+      LAB_MATERIALS_SECRET: ${LAB_MATERIALS_SECRET:?Set LAB_MATERIALS_SECRET in .env}
+      LAB_MANAGER_URL: http://lab-manager:8000
+      LAB_MANAGER_SECRET: ${LAB_MANAGER_SECRET:?Set LAB_MANAGER_SECRET in .env}
       COOKIE_SECURE: ${COOKIE_SECURE}
       ADMIN_USERNAME: ${ADMIN_USERNAME}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
@@ -57,12 +119,14 @@ services:
     networks:
       - app-net
       - nginx-app-net
-    volumes:
-      - lab-flags:/run/cyberarena/lab-flags
+      - lab-control-net
+      - app-metrics-net
     depends_on:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      lab-manager:
         condition: service_healthy
     restart: unless-stopped
     init: true
@@ -84,42 +148,80 @@ services:
       retries: 5
       start_period: 20s
 
-  lab-web:
+  docker-sandbox:
     build:
       context: .
-      dockerfile: docker/lab/Dockerfile
-    expose:
-      - "8000"
-    networks:
-      lab-net:
-        ipv4_address: 172.30.254.10
+      dockerfile: docker/dind/Dockerfile
+    privileged: true
     environment:
-      LAB_FLAGS_FILE: /run/cyberarena/lab-flags/flags.json
+      DOCKER_TLS_CERTDIR: /certs
+      DOCKER_TLS_SAN: DNS:docker-sandbox
     volumes:
-      - lab-flags:/run/cyberarena/lab-flags:ro
+      - docker-certs:/certs
+      - docker-data:/var/lib/docker
+      - ./docker/dind/daemon.json:/etc/docker/daemon.json:ro
+    networks:
+      docker-control-net:
+        ipv4_address: 172.31.250.3
+      dind-pull-net: {}
+    restart: unless-stopped
+    mem_limit: 3584m
+    memswap_limit: 3584m
+    cpus: 2.50
+    pids_limit: 256
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "docker info --format '{{json .Runtimes}}' | grep -q 'runsc'"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  lab-manager:
+    build:
+      context: .
+      dockerfile: docker/lab-manager/Dockerfile
+    environment:
+      DOCKER_HOST: tcp://docker-sandbox:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /run/docker-certs/client
+      DOCKER_GATEWAY: 172.31.250.3
+      LAB_MANAGER_SECRET: ${LAB_MANAGER_SECRET:?Set LAB_MANAGER_SECRET in .env}
+      LAB_MATERIALS_SECRET: ${LAB_MATERIALS_SECRET:?Set LAB_MATERIALS_SECRET in .env}
+    volumes:
+      - docker-certs:/run/docker-certs:ro
+    networks:
+      - lab-control-net
+      - docker-control-net
+      - lab-proxy-net
+      - lab-metrics-net
+    depends_on:
+      docker-sandbox:
+        condition: service_healthy
     restart: unless-stopped
     init: true
     user: "10001:10001"
     read_only: true
     tmpfs:
-      - /tmp:size=16m,noexec,nosuid,nodev
+      - /tmp:size=32m,noexec,nosuid,nodev
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
     mem_limit: 256m
-    cpus: 0.50
-    pids_limit: 64
+    cpus: 0.75
+    pids_limit: 96
     healthcheck:
       test:
         - CMD
         - python
         - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"
-      interval: 30s
-      timeout: 3s
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"
+      interval: 20s
+      timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 30s
 
   db:
     image: postgres:16-alpine
@@ -172,8 +274,14 @@ services:
 volumes:
   postgres-data:
     name: cyberarena-postgres-data
-  lab-flags:
-    name: cyberarena-lab-flags
+  prometheus-data:
+    name: cyberarena-prometheus-data
+  grafana-data:
+    name: cyberarena-grafana-data
+  docker-certs:
+    name: cyberarena-docker-certs
+  docker-data:
+    name: cyberarena-docker-data
 
 networks:
   edge-net:
@@ -184,8 +292,21 @@ networks:
     internal: true
   nginx-app-net:
     internal: true
-  lab-net:
+  lab-control-net:
+    internal: true
+  lab-proxy-net:
+    internal: true
+  docker-control-net:
     internal: true
     ipam:
       config:
-        - subnet: 172.30.254.0/24
+        - subnet: 172.31.250.0/24
+  dind-pull-net:
+  app-metrics-net:
+    internal: true
+  lab-metrics-net:
+    internal: true
+  grafana-prometheus-net:
+    internal: true
+  grafana-proxy-net:
+    internal: true

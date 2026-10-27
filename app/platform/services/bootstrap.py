@@ -66,6 +66,24 @@ SEED_CHALLENGES = (
         "flag": "CTF{negative_quantity_credit}",
         "resource_url": "/lab/shop/",
     },
+    {
+        "seed_key": "reverse-01",
+        "title": "REV-01 — Машина состояний",
+        "category": "Reverse Engineering",
+        "description": "Скачайте ELF-проверяльщик из личной лаборатории и восстановите принимаемую строку по его поведению и логике. Флаг выдаёт лаборатория только после успешной проверки.",
+        "points": 250,
+        "flag": "CTF{reverse_the_machine}",
+        "resource_url": "/lab/reverse/",
+    },
+    {
+        "seed_key": "pwn-01",
+        "title": "PWN-01 — Пульт управления",
+        "category": "Pwn / Binary",
+        "description": "Исследуйте учебную виртуальную машину и составьте короткую программу, которая приведёт её к целевому состоянию. Это безопасная модель управления потоком: бинарник не содержит переполнения памяти и не запускает команды ОС.",
+        "points": 250,
+        "flag": "CTF{safe_vm_control}",
+        "resource_url": "/lab/pwn/",
+    },
 )
 
 

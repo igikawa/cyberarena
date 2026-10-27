@@ -39,6 +39,7 @@ from app.platform.services.challenges import (
     update_challenge as update_challenge_record,
     validate_resource_url,
 )
+from app.platform.services.labs import LAB_CHALLENGE_KEYS, start_user_lab
 from app.platform.services.scoreboard import get_scoreboard
 from app.platform.services.sessions import create_session, delete_session
 from app.platform.services.task_materials import get_seeded_flag
@@ -222,7 +223,33 @@ async def challenge_page(
     if challenge is None:
         raise HTTPException(status_code=404, detail="Challenge not found")
     solved = bool(user and await db.scalar(select(Solve.id).where(Solve.user_id == user.id, Solve.challenge_id == challenge.id)))
-    return await render(request, "challenges/detail.html", {"challenge": public_challenge(challenge, solved)}, db=db)
+    return await render(
+        request,
+        "challenges/detail.html",
+        {
+            "challenge": public_challenge(challenge, solved),
+            "has_isolated_lab": challenge.seed_key in LAB_CHALLENGE_KEYS,
+        },
+        db=db,
+    )
+
+
+@router.post(
+    "/challenges/{challenge_id}/lab/start",
+    dependencies=[Depends(require_csrf)],
+)
+async def start_lab_form(
+    challenge_id: int,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    challenge = await db.get(Challenge, challenge_id)
+    if challenge is None or not challenge.is_published:
+        raise HTTPException(status_code=404, detail="Challenge not found")
+    if challenge.seed_key not in LAB_CHALLENGE_KEYS:
+        raise HTTPException(status_code=400, detail="This challenge has no isolated lab")
+    access_path = await start_user_lab(user.id, challenge.seed_key)
+    return RedirectResponse(access_path, status_code=303)
 
 
 @router.post("/challenges/{challenge_id}/submit", dependencies=[Depends(require_csrf)])

@@ -2,7 +2,7 @@
 {% block title %}Премиальный магазин · BIZ-01{% endblock %}
 {% block content %}
 <p class="eyebrow">BIZ-01 · Проверка бизнес-логики</p>
-<a href="/lab/">← К заданиям лаборатории</a>
+<a href="{{ lab_base_path }}/">← К заданию</a>
 <h1>Премиальный магазин</h1>
 <p class="lede">Учебный магазин принимает заказы на цифровые пропуска. Проверьте, как сервер рассчитывает итоговую стоимость.</p>
 <div class="task-meta"><span>Сложность: средняя</span><span>Категория: Business Logic</span><span>Транзакция: тестовая</span></div>
@@ -10,7 +10,7 @@
     <h2>Данные заказа</h2>
     <div class="task-meta"><span>Баланс аккаунта <strong>100 cr</strong></span><span>Цена за пропуск <strong>250 cr</strong></span></div>
     {% if result %}<p class="notice">{{ result }}</p>{% endif %}
-    <form class="task-form" method="post" action="/lab/shop/checkout">
+    <form class="task-form" method="post" action="{{ lab_base_path }}/shop/checkout">
         <label for="quantity">Количество пропусков</label>
         <input id="quantity" name="quantity" type="number" value="1" required>
         <button type="submit">Оформить заказ</button>
