@@ -10,16 +10,6 @@ from app.platform.services.labs import LAB_CHALLENGE_KEYS, start_user_lab
 from app.platform.storage import get_db
 
 router = APIRouter()
-LAB_CHALLENGE_KEYS = frozenset(
-    {
-        "web-01",
-        "web-03-sqli",
-        "web-04-path-traversal",
-        "business-01",
-        "reverse-01",
-        "pwn-01",
-    }
-)
 
 
 @router.get("/api/challenges")
@@ -85,12 +75,7 @@ async def start_lab_api(
     if challenge is None or not challenge.is_published:
         raise HTTPException(status_code=404, detail="Challenge not found")
     challenge_key = challenge.seed_key
-    if (
-        challenge_key is None
-        or challenge_key not in LAB_CHALLENGE_KEYS
-        or not challenge.resource_url
-        or not challenge.resource_url.startswith("/lab/")
-    ):
+    if challenge_key is None or challenge_key not in LAB_CHALLENGE_KEYS:
         raise HTTPException(status_code=400, detail="This challenge has no isolated lab")
     access_path = await start_user_lab(user.id, challenge_key)
     return {"access_path": access_path}

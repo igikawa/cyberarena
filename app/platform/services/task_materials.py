@@ -7,15 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.platform.core.config import get_settings
 from app.platform.core.security import decrypt_flag
 from app.platform.models import Challenge
+from app.platform.services.labs import LAB_CHALLENGE_KEYS
 
-LAB_SEED_KEYS = (
-    "web-01",
-    "web-03-sqli",
-    "web-04-path-traversal",
-    "business-01",
-    "reverse-01",
-    "pwn-01",
-)
 LAB_MATERIALS_HTTP_TIMEOUT = httpx.Timeout(
     connect=3.0,
     read=60.0,
@@ -42,7 +35,7 @@ async def refresh_lab_flags(db: AsyncSession) -> None:
     if settings.lab_materials_secret is None:
         raise HTTPException(status_code=503, detail="Laboratory materials synchronization is not configured")
     challenges = (
-        await db.scalars(select(Challenge).where(Challenge.seed_key.in_(LAB_SEED_KEYS)))
+        await db.scalars(select(Challenge).where(Challenge.seed_key.in_(LAB_CHALLENGE_KEYS)))
     ).all()
     flags = {
         challenge.seed_key: decrypt_flag(challenge.flag_encrypted)

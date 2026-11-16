@@ -124,7 +124,6 @@ def create_challenge(client: TestClient, flag: str, points: int = 100, published
             "points": points,
             "flag": flag,
             "is_published": published,
-            "resource_url": "/lab/",
         },
         headers={"X-CSRF-Token": token},
     )

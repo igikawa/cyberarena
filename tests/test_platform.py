@@ -27,19 +27,25 @@ def test_binary_challenges_are_seeded_and_start_through_the_personal_lab(
     monkeypatch,
     client: TestClient,
 ):
-    from app.platform.routers import challenges as challenge_routes
+    from app.platform.routers import challenges as challenge_routes, html as html_routes
 
     register(client, "binaryplayer")
     challenge_ids = {
-        item["resource_url"]: item["id"]
+        item["title"]: item["id"]
         for item in client.get("/api/challenges").json()
-        if item["resource_url"] in {"/lab/reverse/", "/lab/pwn/"}
+        if item["title"] in {"REV-01 — Машина состояний", "PWN-01 — Пульт управления"}
     }
-    assert set(challenge_ids) == {"/lab/reverse/", "/lab/pwn/"}
+    assert set(challenge_ids) == {"REV-01 — Машина состояний", "PWN-01 — Пульт управления"}
+    published = client.get("/api/challenges").json()
+    assert all(
+        item["resource_url"] is None
+        for item in published
+        if item["title"] in challenge_ids
+    )
     assert lab_manager_test_app.state.materials["reverse-01"] == "CTF{reverse_the_machine}"
     assert lab_manager_test_app.state.materials["pwn-01"] == "CTF{safe_vm_control}"
-    reverse_detail = client.get(f"/challenges/{challenge_ids['/lab/reverse/']}")
-    pwn_detail = client.get(f"/challenges/{challenge_ids['/lab/pwn/']}")
+    reverse_detail = client.get(f"/challenges/{challenge_ids['REV-01 — Машина состояний']}")
+    pwn_detail = client.get(f"/challenges/{challenge_ids['PWN-01 — Пульт управления']}")
     for detail in (reverse_detail, pwn_detail):
         assert detail.status_code == 200
         assert "Открыть лабораторию" in detail.text
@@ -54,25 +60,34 @@ def test_binary_challenges_are_seeded_and_start_through_the_personal_lab(
         return "/lab-session/" + "a" * 40 + "/"
 
     monkeypatch.setattr(challenge_routes, "start_user_lab", fake_start_user_lab)
-    for resource_url, challenge_key in (
-        ("/lab/reverse/", "reverse-01"),
-        ("/lab/pwn/", "pwn-01"),
+    monkeypatch.setattr(html_routes, "start_user_lab", fake_start_user_lab)
+    for title, challenge_key in (
+        ("REV-01 — Машина состояний", "reverse-01"),
+        ("PWN-01 — Пульт управления", "pwn-01"),
     ):
         response = client.post(
-            f"/api/labs/{challenge_ids[resource_url]}/start",
+            f"/api/labs/{challenge_ids[title]}/start",
             headers={"X-CSRF-Token": csrf(client)},
         )
         assert response.status_code == 200
         assert response.json()["access_path"] == "/lab-session/" + "a" * 40 + "/"
     assert [key for _, key in launched] == ["reverse-01", "pwn-01"]
+    html_launch = client.post(
+        f"/challenges/{challenge_ids['REV-01 — Машина состояний']}/lab/start",
+        data={"csrf_token": csrf(client)},
+        follow_redirects=False,
+    )
+    assert html_launch.status_code == 303
+    assert html_launch.headers["location"] == "/lab-session/" + "a" * 40 + "/"
+    assert [key for _, key in launched] == ["reverse-01", "pwn-01", "reverse-01"]
 
     admin_client(client)
-    for resource_url, challenge_key, flag in (
-        ("/lab/reverse/", "reverse-01", "CTF{updated_reverse_flag}"),
-        ("/lab/pwn/", "pwn-01", "CTF{updated_safevm_flag}"),
+    for title, challenge_key, flag in (
+        ("REV-01 — Машина состояний", "reverse-01", "CTF{updated_reverse_flag}"),
+        ("PWN-01 — Пульт управления", "pwn-01", "CTF{updated_safevm_flag}"),
     ):
         response = client.patch(
-            f"/api/admin/challenges/{challenge_ids[resource_url]}",
+            f"/api/admin/challenges/{challenge_ids[title]}",
             json={"flag": flag},
             headers={"X-CSRF-Token": csrf(client)},
         )
@@ -380,7 +395,46 @@ def test_openapi_docs_are_admin_only(client: TestClient):
 def test_admin_can_create_challenge(client: TestClient):
     admin_client(client)
     challenge_id = create_challenge(client, "flag{admin-create}")
-    assert client.get(f"/api/admin/challenges/{challenge_id}").status_code == 200
+    response = client.get(f"/api/admin/challenges/{challenge_id}")
+    assert response.status_code == 200
+    assert response.json()["resource_url"] is None
+
+
+def test_resource_url_is_optional_material_and_does_not_enable_a_lab(client: TestClient):
+    admin_client(client)
+    token = csrf(client)
+    created = client.post(
+        "/api/admin/challenges",
+        json={
+            "title": "Material-only challenge",
+            "category": "Web",
+            "description": "Read the attached material.",
+            "points": 100,
+            "flag": "CTF{material_only}",
+            "is_published": True,
+            "resource_url": "/tasks/guide.pdf",
+        },
+        headers={"X-CSRF-Token": token},
+    )
+    assert created.status_code == 201
+    challenge_id = created.json()["id"]
+    detail = client.get(f"/challenges/{challenge_id}")
+    assert 'href="/tasks/guide.pdf"' in detail.text
+    assert "Открыть лабораторию" not in detail.text
+    assert "data-lab-start-form" not in detail.text
+    assert client.post(
+        f"/api/labs/{challenge_id}/start",
+        headers={"X-CSRF-Token": token},
+    ).status_code == 400
+
+    cleared = client.patch(
+        f"/api/admin/challenges/{challenge_id}",
+        json={"resource_url": None},
+        headers={"X-CSRF-Token": csrf(client)},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["resource_url"] is None
+    assert "Открыть ресурс задания" not in client.get(f"/challenges/{challenge_id}").text
 
 
 def test_challenge_validation_rejects_blank_and_null_required_fields(client: TestClient):
@@ -596,6 +650,21 @@ def test_seeded_challenges_and_local_resources(client: TestClient):
         ("Crypto", 150),
     ]
     assert all("flag" not in item and "flag_hash" not in item for item in challenges)
+    lab_titles = {
+        "WEB-01 — Скрытый документ",
+        "WEB-03 — Архив сотрудников",
+        "WEB-04 — За пределами папки",
+        "BIZ-01 — Магазин с ошибкой",
+        "REV-01 — Машина состояний",
+        "PWN-01 — Пульт управления",
+    }
+    assert all(
+        challenge["resource_url"] is None
+        for challenge in challenges
+        if challenge["title"] in lab_titles
+    )
+    assert next(item for item in challenges if item["title"].startswith("WEB-02"))["resource_url"] == "/static/tasks/web02/index.html"
+    assert next(item for item in challenges if item["title"].startswith("CRYPTO-01"))["resource_url"] == "/tasks/crypto01/download"
     web02 = client.get("/static/tasks/web02/index.html")
     script = client.get("/static/tasks/web02/clue.js")
     assert web02.status_code == script.status_code == 200
@@ -615,46 +684,46 @@ def test_rotating_seed_flags_updates_task_materials_and_validation(client: TestC
     original_materials = lab_app_module.LAB_MATERIALS
     challenges = client.get("/api/admin/challenges").json()
     seeded = {
-        challenge["resource_url"]: challenge["id"]
+        challenge["title"]: challenge["id"]
         for challenge in challenges
-        if challenge["resource_url"] in {
-            "/lab/",
-            "/static/tasks/web02/index.html",
-            "/tasks/crypto01/download",
+        if challenge["title"] in {
+            "WEB-01 — Скрытый документ",
+            "WEB-02 — Посмотри исходник",
+            "CRYPTO-01 — Три шага назад",
         }
     }
     new_flags = {
-        "/lab/": "CTF{web01_rotated_answer}",
-        "/static/tasks/web02/index.html": "CTF{web02_rotated_answer}",
-        "/tasks/crypto01/download": "CTF{crypto_rotated_answer}",
+        "WEB-01 — Скрытый документ": "CTF{web01_rotated_answer}",
+        "WEB-02 — Посмотри исходник": "CTF{web02_rotated_answer}",
+        "CRYPTO-01 — Три шага назад": "CTF{crypto_rotated_answer}",
     }
     old_flags = {
-        "/lab/": "CTF{idor_hidden_document}",
-        "/static/tasks/web02/index.html": "CTF{source_maps_are_not_needed}",
-        "/tasks/crypto01/download": "CTF{caesar_shift_is_fun}",
+        "WEB-01 — Скрытый документ": "CTF{idor_hidden_document}",
+        "WEB-02 — Посмотри исходник": "CTF{source_maps_are_not_needed}",
+        "CRYPTO-01 — Три шага назад": "CTF{caesar_shift_is_fun}",
     }
     assert set(seeded) == set(new_flags)
-    for resource_url, flag in new_flags.items():
+    for title, flag in new_flags.items():
         response = client.patch(
-            f"/api/admin/challenges/{seeded[resource_url]}",
+            f"/api/admin/challenges/{seeded[title]}",
             json={"flag": flag},
             headers={"X-CSRF-Token": csrf(client)},
         )
         assert response.status_code == 200, response.text
 
     try:
-        assert lab_manager_test_app.state.materials["web-01"] == new_flags["/lab/"]
+        assert lab_manager_test_app.state.materials["web-01"] == new_flags["WEB-01 — Скрытый документ"]
         lab_app_module.LAB_MATERIALS = dict(lab_manager_test_app.state.materials)
         with TestClient(lab_app) as lab:
             web01_document = lab.get("/documents/1002").text
-            assert new_flags["/lab/"] in web01_document
-            assert old_flags["/lab/"] not in web01_document
+            assert new_flags["WEB-01 — Скрытый документ"] in web01_document
+            assert old_flags["WEB-01 — Скрытый документ"] not in web01_document
 
         web02_page = client.get("/static/tasks/web02/index.html")
         web02_script = client.get("/static/tasks/web02/clue.js")
         assert "/static/tasks/web02/clue.js" in web02_page.text
-        assert new_flags["/static/tasks/web02/index.html"] in web02_script.text
-        assert old_flags["/static/tasks/web02/index.html"] not in web02_script.text
+        assert new_flags["WEB-02 — Посмотри исходник"] in web02_script.text
+        assert old_flags["WEB-02 — Посмотри исходник"] not in web02_script.text
 
         crypto_text = client.get("/tasks/crypto01/download").text
         encoded_flag = crypto_text.split("Ciphertext: ", 1)[1].strip()
@@ -664,19 +733,19 @@ def test_rotating_seed_flags_updates_task_materials_and_validation(client: TestC
             else char
             for char in encoded_flag
         )
-        assert decoded_flag == new_flags["/tasks/crypto01/download"]
-        assert decoded_flag != old_flags["/tasks/crypto01/download"]
+        assert decoded_flag == new_flags["CRYPTO-01 — Три шага назад"]
+        assert decoded_flag != old_flags["CRYPTO-01 — Три шага назад"]
 
-        for resource_url, flag in new_flags.items():
+        for title, flag in new_flags.items():
             old_response = client.post(
-                f"/api/challenges/{seeded[resource_url]}/submit",
-                json={"flag": old_flags[resource_url]},
+                f"/api/challenges/{seeded[title]}/submit",
+                json={"flag": old_flags[title]},
                 headers={"X-CSRF-Token": csrf(client)},
             )
             assert old_response.status_code == 200
             assert old_response.json()["is_correct"] is False
             response = client.post(
-                f"/api/challenges/{seeded[resource_url]}/submit",
+                f"/api/challenges/{seeded[title]}/submit",
                 json={"flag": flag},
                 headers={"X-CSRF-Token": csrf(client)},
             )
@@ -719,14 +788,14 @@ def test_new_lab_challenges_are_isolated_and_flags_rotate(client: TestClient):
         "web-04-path-traversal": "CTF{virtual_paths_only}",
         "business-01": "CTF{negative_quantity_credit}",
     }
-    challenge_by_seed_url = {
-        challenge["resource_url"]: challenge["id"]
+    challenge_by_title = {
+        challenge["title"]: challenge["id"]
         for challenge in client.get("/api/admin/challenges").json()
     }
     lab_urls = {
-        "/lab/sql/": ("web-03-sqli", "CTF{union_of_synthetic_records}", "CTF{sql_rotated}"),
-        "/lab/files/": ("web-04-path-traversal", "CTF{virtual_paths_only}", "CTF{path_rotated}"),
-        "/lab/shop/": ("business-01", "CTF{negative_quantity_credit}", "CTF{business_rotated}"),
+        "WEB-03 — Архив сотрудников": ("web-03-sqli", "CTF{union_of_synthetic_records}", "CTF{sql_rotated}"),
+        "WEB-04 — За пределами папки": ("web-04-path-traversal", "CTF{virtual_paths_only}", "CTF{path_rotated}"),
+        "BIZ-01 — Магазин с ошибкой": ("business-01", "CTF{negative_quantity_credit}", "CTF{business_rotated}"),
     }
     try:
         with TestClient(lab_app) as lab:
@@ -763,8 +832,8 @@ def test_new_lab_challenges_are_isolated_and_flags_rotate(client: TestClient):
             assert missing_quantity.status_code == 422
             assert "Количество должно быть целым числом" in missing_quantity.text
 
-        for index, (resource_url, (seed_key, old_flag, new_flag)) in enumerate(lab_urls.items()):
-            challenge_id = challenge_by_seed_url[resource_url]
+        for index, (title, (seed_key, old_flag, new_flag)) in enumerate(lab_urls.items()):
+            challenge_id = challenge_by_title[title]
             changed = client.patch(
                 f"/api/admin/challenges/{challenge_id}",
                 json={"flag": new_flag},
@@ -774,9 +843,9 @@ def test_new_lab_challenges_are_isolated_and_flags_rotate(client: TestClient):
             assert lab_manager_test_app.state.materials[seed_key] == new_flag
             lab_app_module.LAB_MATERIALS[seed_key] = new_flag
             with TestClient(lab_app) as lab:
-                if resource_url == "/lab/sql/":
+                if seed_key == "web-03-sqli":
                     material = lab.get("/sql/", params={"username": "' OR 1=1 --"}).text
-                elif resource_url == "/lab/files/":
+                elif seed_key == "web-04-path-traversal":
                     material = lab.get("/files/", params={"path": "../../private/flag.txt"}).text
                 else:
                     material = lab.post("/shop/checkout", data={"quantity": "-1"}).text
@@ -814,13 +883,17 @@ def test_admin_html_lifecycle_and_tournament_reset(client: TestClient):
             "points": "80",
             "flag": "CTF{html_admin_flag}",
             "is_published": "on",
-            "resource_url": "/lab/",
+            "resource_url": "/tasks/custom-material.txt",
         },
         follow_redirects=False,
     )
     assert created.status_code == 303, created.text
     challenge_id = client.get("/api/admin/challenges").json()[-1]["id"]
-    assert client.get(f"/challenges/{challenge_id}").status_code == 200
+    detail = client.get(f"/challenges/{challenge_id}")
+    assert detail.status_code == 200
+    assert 'href="/tasks/custom-material.txt"' in detail.text
+    assert "Открыть лабораторию" not in detail.text
+    assert "/tasks/custom-material.txt" in client.get(f"/admin/challenges/{challenge_id}/edit").text
     assert client.post(
         f"/admin/challenges/{challenge_id}/unpublish",
         data={"csrf_token": csrf(client)},
@@ -844,10 +917,12 @@ def test_admin_html_lifecycle_and_tournament_reset(client: TestClient):
             "points": "81",
             "flag": "CTF{html_admin_flag_updated}",
             "is_published": "on",
-            "resource_url": "/tasks/crypto01/download",
+            "resource_url": "/tasks/edited-material.txt",
         },
         follow_redirects=False,
     ).status_code == 303
+    edited_detail = client.get(f"/challenges/{challenge_id}")
+    assert 'href="/tasks/edited-material.txt"' in edited_detail.text
 
     client.post("/api/auth/logout", headers={"X-CSRF-Token": csrf(client)})
     register(client, "resetplayer")

@@ -6,7 +6,7 @@
     <div class="card-top"><span class="tag">{{ challenge.category }}</span><span class="points">{{ challenge.points }} pts</span></div>
     <h1>{{ challenge.title }}</h1>
     <div class="prose">{{ challenge.description }}</div>
-    {% if challenge.resource_url and has_isolated_lab and user %}
+    {% if has_isolated_lab and user %}
     <form method="post" action="/challenges/{{ challenge.id }}/lab/start" class="resource" data-lab-start-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="button button-secondary" type="submit">Открыть лабораторию ↗</button>
@@ -14,11 +14,13 @@
             Создаём вашу лабораторию. Первый запуск может занять до минуты — пожалуйста, не закрывайте страницу.
         </p>
     </form>
-    {% elif challenge.resource_url and has_isolated_lab %}
+    {% elif has_isolated_lab %}
     <p class="notice notice-info"><a href="/login">Войдите</a>, чтобы запустить личную лабораторию.</p>
-    {% elif challenge.resource_url %}
+    {% endif %}
+    {% if challenge.resource_url %}
     <p class="resource"><a class="button button-secondary" href="{{ challenge.resource_url }}" target="_blank" rel="noopener noreferrer">Открыть ресурс задания ↗</a></p>
-    {% else %}
+    {% endif %}
+    {% if not has_isolated_lab and not challenge.resource_url %}
     <p class="muted">Для этого задания лабораторный ресурс не настроен.</p>
     {% endif %}
     {% if challenge.is_solved %}
@@ -33,7 +35,7 @@
     <p class="notice notice-info"><a href="/login">Войдите</a>, чтобы отправить флаг и сохранить решение.</p>
     {% endif %}
 </article>
-{% if challenge.resource_url and has_isolated_lab and user %}
+{% if has_isolated_lab and user %}
 <script src="/static/lab-start.js?v=1" defer></script>
 {% endif %}
 {% endblock %}
