@@ -20,6 +20,7 @@ from app.platform.dependencies import admin_user
 from app.platform.metrics import HTTP_REQUESTS, HTTP_REQUEST_DURATION
 from app.platform.routers import admin, auth, challenges, html, scoreboard
 from app.platform.services.bootstrap import ensure_admin, seed_challenges
+from app.platform.services.cache import invalidate_challenges_cache
 from app.platform.services.task_materials import refresh_lab_flags
 from app.platform.storage import close_database, get_db, get_session_factory
 
@@ -39,6 +40,7 @@ async def lifespan(fastapi_app: FastAPI):
             await ensure_admin(session, settings.admin_username, settings.admin_password)
             await seed_challenges(session)
             await refresh_lab_flags(session)
+            await invalidate_challenges_cache(cache)
         async def resynchronize_lab_materials() -> None:
             while True:
                 await asyncio.sleep(30)

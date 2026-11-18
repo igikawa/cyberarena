@@ -17,6 +17,17 @@ LAB_CHALLENGE_KEYS = frozenset(
     }
 )
 
+LAB_CHALLENGE_KEYS = frozenset(
+    {
+        "web-01",
+        "web-03-sqli",
+        "web-04-path-traversal",
+        "business-01",
+        "reverse-01",
+        "pwn-01",
+    }
+)
+
 LAB_MANAGER_HTTP_TIMEOUT = httpx.Timeout(
     connect=3.0,
     read=60.0,
