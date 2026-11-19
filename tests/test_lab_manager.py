@@ -11,8 +11,69 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lab-manager"))
 pytest.importorskip("docker")
 
 from docker.errors import NotFound
+from fastapi.testclient import TestClient
 
 from lab_manager import main as manager
+
+
+def test_expired_lab_browser_error_is_a_helpful_html_page(monkeypatch):
+    monkeypatch.setattr(manager, "lab_target", lambda *_: None)
+    monkeypatch.setattr(manager.app.state, "docker", object(), raising=False)
+    token = "a" * 40
+
+    response = TestClient(manager.app).get(
+        f"/lab-session/{token}/",
+        headers={"Accept": "text/html"},
+    )
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Лаборатория больше недоступна" in response.text
+    assert "запустите новую личную лабораторию" in response.text
+    assert 'href="/challenges"' in response.text
+
+
+def test_expired_lab_non_browser_error_remains_json(monkeypatch):
+    monkeypatch.setattr(manager, "lab_target", lambda *_: None)
+    monkeypatch.setattr(manager.app.state, "docker", object(), raising=False)
+
+    response = TestClient(manager.app).get(
+        f"/lab-session/{'b' * 40}/",
+        headers={"Accept": "application/json"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Laboratory session has expired"}
+
+
+def test_unavailable_lab_browser_error_is_a_helpful_html_page(monkeypatch):
+    class UnavailableLabClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def request(self, *_args, **_kwargs):
+            raise manager.httpx.ConnectError("lab container unavailable")
+
+    monkeypatch.setattr(manager, "lab_target", lambda *_: "http://127.0.0.1:49152")
+    monkeypatch.setattr(manager.app.state, "docker", object(), raising=False)
+    monkeypatch.setattr(manager.httpx, "AsyncClient", UnavailableLabClient)
+
+    response = TestClient(manager.app).get(
+        f"/lab-session/{'c' * 40}/",
+        headers={"Accept": "text/html"},
+    )
+
+    assert response.status_code == 503
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Не удалось открыть лабораторию" in response.text
+    assert "Подождите немного и попробуйте снова" in response.text
+    assert "Попробовать снова" in response.text
 
 
 def test_dind_uses_runc_for_image_builds_and_registers_runsc_for_labs():

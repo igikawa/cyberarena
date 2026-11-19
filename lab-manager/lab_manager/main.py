@@ -14,10 +14,14 @@ import httpx
 from docker.errors import DockerException, ImageNotFound, NotFound
 from docker.types import Ulimit
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.concurrency import run_in_threadpool
+from starlette.templating import Jinja2Templates
 
 from lab_manager.metrics import (
     ACTIVE_LABS,
@@ -431,6 +435,91 @@ app = FastAPI(
     openapi_url=None,
     lifespan=lifespan,
 )
+error_templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+
+
+def wants_lab_html_error(request: Request) -> bool:
+    if not request.url.path.startswith("/lab-session/"):
+        return False
+    accepted_types: dict[str, float] = {}
+    for accepted_type in request.headers.get("accept", "").split(","):
+        media_type, *parameters = accepted_type.strip().lower().split(";")
+        quality = 1.0
+        for parameter in parameters:
+            name, separator, value = parameter.strip().partition("=")
+            if name == "q" and separator:
+                try:
+                    quality = float(value)
+                except ValueError:
+                    quality = 0.0
+                break
+        accepted_types[media_type] = quality
+    html_quality = accepted_types.get("text/html", 0.0)
+    json_quality = accepted_types.get("application/json", 0.0)
+    return html_quality > 0 and html_quality > json_quality
+
+
+def render_lab_error(
+    request: Request,
+    status_code: int,
+    headers: dict | None = None,
+) -> HTMLResponse:
+    if status_code == 404:
+        eyebrow = "Сессия лаборатории завершена"
+        title = "Лаборатория больше недоступна"
+        message = (
+            "Время работы лаборатории истекло или ссылка неверна. "
+            "Сессия лаборатории действует ограниченное время."
+        )
+        hint = "Вернитесь к заданию и запустите новую личную лабораторию. Ваш прогресс на платформе сохранён."
+    elif status_code == 503:
+        eyebrow = "Временный сбой лаборатории"
+        title = "Не удалось открыть лабораторию"
+        message = (
+            "Лаборатория временно недоступна: контейнер может запускаться, "
+            "перезапускаться или быть занят."
+        )
+        hint = "Подождите немного и попробуйте снова со страницы задания. Ваши результаты на платформе не потеряны."
+    else:
+        eyebrow = "Ошибка лаборатории"
+        title = "Не удалось выполнить запрос"
+        message = "Проверьте ссылку и попробуйте открыть задание ещё раз."
+        hint = "Если ошибка повторяется, обратитесь к преподавателю или администратору турнира."
+    return error_templates.TemplateResponse(
+        request,
+        "lab_error.html",
+        {
+            "status_code": status_code,
+            "eyebrow": eyebrow,
+            "title": title,
+            "message": message,
+            "hint": hint,
+        },
+        status_code=status_code,
+        headers={"Cache-Control": "no-store", **(headers or {})},
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def lab_http_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> HTMLResponse | JSONResponse:
+    if wants_lab_html_error(request):
+        return render_lab_error(request, exc.status_code, exc.headers)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=jsonable_encoder({"detail": exc.detail}),
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def lab_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> HTMLResponse | JSONResponse:
+    if wants_lab_html_error(request):
+        return render_lab_error(request, 422)
+    return JSONResponse(status_code=422, content=jsonable_encoder({"detail": exc.errors()}))
 
 
 def authenticate(secret: str | None, expected: str) -> None:

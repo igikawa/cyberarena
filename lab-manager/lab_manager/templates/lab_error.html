@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <meta name="theme-color" content="#090e17">
+    <title>{{ title }} · CYBERARENA</title>
+    <link rel="stylesheet" href="/errors/unavailable.css">
+</head>
+<body>
+<main class="shell">
+    <a class="brand" href="/" aria-label="CYBERARENA — главная">
+        <span class="brand-mark" aria-hidden="true">C</span>
+        <span>CYBERARENA</span>
+    </a>
+    <section class="card" aria-labelledby="title">
+        <div class="icon" aria-hidden="true">{{ "⌁" if status_code == 404 else "!" }}</div>
+        <p class="eyebrow">{{ eyebrow }} · {{ status_code }}</p>
+        <h1 id="title">{{ title }}</h1>
+        <p class="lede">{{ message }}</p>
+        <div class="hint">
+            <span class="hint-mark" aria-hidden="true">i</span>
+            <span>{{ hint }}</span>
+        </div>
+        <div class="actions">
+            {% if status_code == 503 %}
+            <a class="button" href="">Попробовать снова</a>
+            {% endif %}
+            <a class="button button-secondary" href="/challenges">Вернуться к заданиям</a>
+        </div>
+    </section>
+    <p class="footer">CYBERARENA · изолированная учебная лаборатория</p>
+</main>
+</body>
+</html>

@@ -30,13 +30,13 @@ def test_binary_lab_pages_are_scoped_to_the_active_challenge(
             assert "<summary>Подсказка</summary>" in page_response.text
             assert "objdump -s -j .rodata ./revcheck" in page_response.text
             assert "примените XOR с той же константой" in page_response.text
-            assert "Сложность: начальная" in page_response.text
+            assert "Сложность: сложная" in page_response.text
             assert "Категория: Reverse Engineering" in page_response.text
         else:
             assert "<summary>Подсказка</summary>" in page_response.text
             assert "objdump -d -M intel ./safevm" in page_response.text
             assert "целевое состояние <code>0x2a</code>" in page_response.text
-            assert "Сложность: средняя" in page_response.text
+            assert "Сложность: сложная" in page_response.text
             assert "Категория: Pwn / Binary" in page_response.text
         assert client.get(other_page).status_code == 404
         assert client.get("/reverse/download" if challenge_key == "pwn-01" else "/pwn/download").status_code == 404
