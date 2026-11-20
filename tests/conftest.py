@@ -39,6 +39,8 @@ from app.platform.services import task_materials
 REAL_ASYNC_CLIENT = httpx.AsyncClient
 lab_manager_test_app = FastAPI()
 lab_manager_test_app.state.materials = {}
+lab_manager_test_app.state.custom_images = {}
+lab_manager_test_app.state.missing_custom_images = set()
 
 
 @lab_manager_test_app.put("/internal/materials")
@@ -48,13 +50,25 @@ async def receive_lab_materials(
 ):
     if secret != os.environ["LAB_MATERIALS_SECRET"]:
         raise HTTPException(status_code=401)
-    lab_manager_test_app.state.materials = (await request.json())["materials"]
+    payload = await request.json()
+    missing = lab_manager_test_app.state.missing_custom_images.intersection(
+        payload.get("custom_images", {})
+    )
+    if missing:
+        raise HTTPException(
+            status_code=409,
+            detail={"missing_custom_images": sorted(missing)},
+        )
+    lab_manager_test_app.state.materials = payload["materials"]
+    lab_manager_test_app.state.custom_images = payload.get("custom_images", {})
     return {"status": "updated"}
 
 
 @pytest.fixture
 def client(monkeypatch):
     lab_manager_test_app.state.materials = {}
+    lab_manager_test_app.state.custom_images = {}
+    lab_manager_test_app.state.missing_custom_images = set()
     monkeypatch.setattr(
         task_materials,
         "create_lab_material_client",

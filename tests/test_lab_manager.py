@@ -321,6 +321,60 @@ def test_create_lab_uses_only_the_fixed_hardened_container_policy(monkeypatch):
     assert manager.lab_target(client, token) == "http://172.31.250.3:49152"
 
 
+def test_internal_launch_uses_synced_custom_image_with_the_existing_runtime_limits(monkeypatch):
+    monkeypatch.setattr(manager, "lab_is_ready", lambda target: True)
+    client = FakeDockerClient()
+    challenge_key = "custom-73"
+    image_ref = f"cyberarena/{challenge_key}:" + "a" * 20
+    monkeypatch.setattr(manager.app.state, "docker", client, raising=False)
+    monkeypatch.setattr(
+        manager.app.state,
+        "launch_secret",
+        "manager-test-secret-that-is-at-least-32-characters",
+        raising=False,
+    )
+    monkeypatch.setattr(manager.app.state, "lab_images", {}, raising=False)
+    monkeypatch.setattr(
+        manager.app.state,
+        "custom_images",
+        {challenge_key: image_ref},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        manager.app.state,
+        "materials",
+        {challenge_key: "CTF{custom_runtime}"},
+        raising=False,
+    )
+    request = manager.Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/internal/labs",
+            "headers": [],
+            "app": manager.app,
+        }
+    )
+
+    response = manager.start_lab(
+        manager.LabLaunch(user_id=73, challenge_id=challenge_key),
+        request,
+        secret="manager-test-secret-that-is-at-least-32-characters",
+    )
+
+    options = client.containers.last_create
+    assert response["access_path"].startswith("/lab-session/")
+    assert options["image"] == image_ref
+    assert options["environment"]["LAB_CHALLENGE_FLAG"] == "CTF{custom_runtime}"
+    assert options["runtime"] == "runsc"
+    assert options["mem_limit"] == options["memswap_limit"] == "128m"
+    assert options["nano_cpus"] == 250_000_000
+    assert options["pids_limit"] == 64
+    assert "user" not in options
+    assert "read_only" not in options
+    assert "cap_drop" not in options
+
+
 def test_create_lab_cleans_up_container_and_network_when_runsc_fails_to_start():
     client = FakeDockerClient()
     client.containers.start_error = RuntimeError("runsc sandbox failed to start")

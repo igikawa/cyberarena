@@ -33,6 +33,9 @@ def admin_challenge_view(challenge: Challenge) -> dict:
         "points": challenge.points,
         "is_published": challenge.is_published,
         "resource_url": challenge.resource_url,
+        "lab_build_status": challenge.lab_build_status,
+        "has_isolated_lab": challenge.lab_image_ref is not None
+        and challenge.lab_build_status == "ready",
         "created_at": challenge.created_at,
         "updated_at": challenge.updated_at,
     }
@@ -90,6 +93,11 @@ async def set_published(
     challenge = await db.get(Challenge, challenge_id)
     if challenge is None:
         raise HTTPException(status_code=404, detail="Challenge not found")
+    if published and challenge.lab_build_status in {"building", "failed"}:
+        raise HTTPException(
+            status_code=409,
+            detail="A custom laboratory must pass its build checks before publication",
+        )
     challenge.is_published = published
     await db.commit()
     await invalidate_challenges_cache(cache)

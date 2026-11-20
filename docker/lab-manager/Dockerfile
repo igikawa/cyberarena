@@ -28,4 +28,4 @@ COPY --from=binary-build /out/revcheck /opt/lab-build/binaries/revcheck
 COPY --from=binary-build /out/safevm /opt/lab-build/binaries/safevm
 USER 10001:10001
 EXPOSE 8000
-CMD ["uvicorn", "lab_manager.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+CMD ["uvicorn", "lab_manager.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,24 +1,27 @@
 import hashlib
+import io
 import logging
 import os
 import re
 import secrets
 import threading
+import tarfile
+import tempfile
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Annotated, Literal
+from pathlib import Path, PurePosixPath
+from typing import Annotated
 
 import docker
 import httpx
 from docker.errors import DockerException, ImageNotFound, NotFound
 from docker.types import Ulimit
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.concurrency import run_in_threadpool
 from starlette.templating import Jinja2Templates
@@ -44,7 +47,8 @@ CHALLENGE_IMAGES: dict[str, str] = {
     "pwn-01": "pwn-01",
 }
 LAB_IMAGE_CONTEXT = Path("/opt/lab-build")
-LAB_IMAGE_BUILD_REVISION = "3"
+LAB_IMAGE_BUILD_REVISION = "4"
+CUSTOM_LAB_BASE_IMAGE = "cyberarena/lab-base:custom"
 LAB_CONTAINER_PORT = 8000
 LAB_NETWORK_PREFIX = "ctf_lab_net_"
 LAB_CONTAINER_PREFIX = "ctf_lab_"
@@ -59,6 +63,11 @@ LAB_MEMORY_LIMIT = "128m"
 LAB_NANO_CPUS = 250_000_000
 LAB_PIDS_LIMIT = 64
 LAB_NPROC_LIMIT = 10
+MAX_CUSTOM_ARCHIVE_BYTES = 2 * 1024 * 1024
+MAX_CUSTOM_CONTEXT_BYTES = 5 * 1024 * 1024
+MAX_CUSTOM_CONTEXT_FILES = 100
+CUSTOM_BUILD_TIMEOUT_SECONDS = 270
+CUSTOM_BUILD_MEMORY_LIMIT = 1536 * 1024 * 1024
 LAB_TTL_SECONDS = 900
 LAB_READY_TIMEOUT_SECONDS = 30
 LAB_READY_POLL_INTERVAL_SECONDS = 0.1
@@ -74,17 +83,26 @@ ALLOWED_MATERIAL_KEYS = frozenset(CHALLENGE_IMAGES)
 class MaterialUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    materials: dict[
-        Literal[
-            "web-01",
-            "web-03-sqli",
-            "web-04-path-traversal",
-            "business-01",
-            "reverse-01",
-            "pwn-01",
-        ],
-        Annotated[str, Field(min_length=1, max_length=256)],
-    ]
+    materials: dict[str, Annotated[str, Field(min_length=1, max_length=256)]]
+    custom_images: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def custom_materials_must_have_approved_images(self) -> "MaterialUpdate":
+        custom_keys = {key for key in self.materials if key.startswith("custom-")}
+        if any(
+            key not in ALLOWED_MATERIAL_KEYS and re.fullmatch(r"custom-[1-9][0-9]*", key) is None
+            for key in self.materials
+        ):
+            raise ValueError("Unknown laboratory material key")
+        if set(self.custom_images) != custom_keys:
+            raise ValueError("Every custom material must have exactly one approved image")
+        for key, image_ref in self.custom_images.items():
+            challenge_id = key.removeprefix("custom-")
+            if re.fullmatch(
+                rf"cyberarena/custom-{challenge_id}:[a-f0-9]{{20}}", image_ref
+            ) is None:
+                raise ValueError("Invalid custom laboratory image reference")
+        return self
 
 
 class LabLaunch(BaseModel):
@@ -125,6 +143,8 @@ def ensure_lab_images(client: docker.DockerClient) -> dict[str, str]:
             nocache=True,
         )
         image = client.images.get(base_image)
+    if not image.tag("cyberarena/lab-base", tag="custom", force=True):
+        raise DockerException("Could not tag the approved custom lab base image")
     result = {}
     for challenge_id, image_name in CHALLENGE_IMAGES.items():
         tagged_image = f"cyberarena/{image_name}:{fingerprint}"
@@ -139,6 +159,137 @@ def ensure_lab_images(client: docker.DockerClient) -> dict[str, str]:
                 raise DockerException(f"Could not tag the approved image for {challenge_id}")
         result[challenge_id] = tagged_image
     return result
+
+
+def extract_custom_context(archive: bytes, destination: Path) -> None:
+    if not archive or len(archive) > MAX_CUSTOM_ARCHIVE_BYTES:
+        raise ValueError("Архив исходников должен быть не больше 2 МиБ.")
+    try:
+        with tarfile.open(fileobj=io.BytesIO(archive), mode="r|gz") as source:
+            file_count = 0
+            member_count = 0
+            total_size = 0
+            for member in source:
+                member_count += 1
+                if member_count > MAX_CUSTOM_CONTEXT_FILES:
+                    raise ValueError("В архиве должно быть не больше 100 элементов.")
+                member_path = PurePosixPath(member.name)
+                if (
+                    member_path.is_absolute()
+                    or not member_path.parts
+                    or any(part in {"", ".", ".."} for part in member_path.parts)
+                    or not (member.isfile() or member.isdir())
+                ):
+                    raise ValueError("Архив содержит недопустимый путь или тип файла.")
+                total_size += member.size if member.isfile() else 0
+                if member.size < 0 or member.size > MAX_CUSTOM_CONTEXT_BYTES:
+                    raise ValueError("Размер файла в архиве превышает лимит.")
+                if total_size > MAX_CUSTOM_CONTEXT_BYTES:
+                    raise ValueError("Распакованный архив превышает 5 МиБ.")
+                target = destination.joinpath(*member_path.parts)
+                target.resolve().relative_to(destination.resolve())
+                if member.isdir():
+                    if member.size:
+                        raise ValueError("Каталог в архиве имеет недопустимый размер.")
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                file_count += 1
+                target.parent.mkdir(parents=True, exist_ok=True)
+                stream = source.extractfile(member)
+                if stream is None:
+                    raise ValueError("Не удалось прочитать файл из архива.")
+                with stream, target.open("wb") as output:
+                    content = stream.read(member.size + 1)
+                    if len(content) != member.size:
+                        raise ValueError("Размер файла в архиве не соответствует заголовку.")
+                    output.write(content)
+                target.chmod(member.mode & 0o777)
+            if not file_count or not (destination / "Dockerfile").is_file():
+                raise ValueError("В корне архива должен находиться Dockerfile.")
+    except (tarfile.TarError, OSError, EOFError) as exc:
+        raise ValueError("Не удалось прочитать tar.gz архив исходников.") from exc
+
+
+def validate_custom_dockerfile(dockerfile: Path) -> None:
+    try:
+        text = dockerfile.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError("Dockerfile должен быть корректным UTF-8 текстом.") from exc
+    if not text.strip() or len(text.encode()) > 16 * 1024:
+        raise ValueError("Dockerfile пустой или превышает 16 КиБ.")
+    if re.search(r"(?im)^\s*FROM\s+\S+", text) is None:
+        raise ValueError("Dockerfile должен содержать инструкцию FROM.")
+
+
+def verify_custom_image(
+    client: docker.DockerClient,
+    image_ref: str,
+    challenge_key: str,
+    flag: str,
+) -> None:
+    token, _ = create_lab(client, image_ref, 0, challenge_key, flag)
+    try:
+        response = httpx.get(
+            f"http://nginx/lab-session/{token}/health",
+            timeout=httpx.Timeout(connect=3, read=5, write=3, pool=3),
+        )
+        if response.status_code != 200:
+            raise DockerException(
+                f"Laboratory proxy health check returned HTTP {response.status_code}"
+            )
+    except httpx.HTTPError as exc:
+        raise DockerException("Laboratory was not reachable through the Nginx proxy") from exc
+    finally:
+        try:
+            container = client.containers.get(
+                f"{LAB_CONTAINER_PREFIX}0_{challenge_key.replace('-', '_')}"
+            )
+            remove_lab(client, container)
+        except NotFound:
+            pass
+        remove_orphaned_networks(client)
+
+
+def build_custom_image(
+    client: docker.DockerClient,
+    challenge_id: int,
+    flag: str,
+    archive: bytes,
+) -> str:
+    challenge_key = f"custom-{challenge_id}"
+    image_ref = f"cyberarena/{challenge_key}:{hashlib.sha256(archive).hexdigest()[:20]}"
+    with tempfile.TemporaryDirectory(prefix="cyberarena-custom-lab-") as directory:
+        context = Path(directory)
+        extract_custom_context(archive, context)
+        validate_custom_dockerfile(context / "Dockerfile")
+        built = False
+        try:
+            client.images.build(
+                path=str(context),
+                tag=image_ref,
+                rm=True,
+                forcerm=True,
+                pull=False,
+                nocache=True,
+                network_mode="bridge",
+                timeout=CUSTOM_BUILD_TIMEOUT_SECONDS,
+                container_limits={
+                    "memory": CUSTOM_BUILD_MEMORY_LIMIT,
+                    "memswap": CUSTOM_BUILD_MEMORY_LIMIT,
+                    "cpushares": 1024,
+                },
+            )
+            built = True
+            client.images.get(image_ref)
+            verify_custom_image(client, image_ref, challenge_key, flag)
+        except Exception:
+            if built:
+                try:
+                    client.images.remove(image_ref, force=True)
+                except (DockerException, ImageNotFound):
+                    logger.exception("Could not remove failed custom lab image %s", image_ref)
+            raise
+    return image_ref
 
 
 def get_managed_containers(client: docker.DockerClient):
@@ -306,38 +457,44 @@ def create_lab(
                 },
                 labels=labels,
             )
-            container = client.containers.create(
-                image=image,
-                name=container_name,
-                init=True,
-                user="10001:10001",
-                runtime="runsc",
-                network=network.name,
-                ports={
+            container_options = {
+                "image": image,
+                "name": container_name,
+                "init": True,
+                "runtime": "runsc",
+                "network": network.name,
+                "ports": {
                     f"{LAB_CONTAINER_PORT}/tcp": (DOCKER_GATEWAY, None)
                 },
-                environment={
+                "environment": {
                     "LAB_CHALLENGE_KEY": challenge_id,
                     "LAB_CHALLENGE_FLAG": flag,
                 },
-                labels=labels,
-                mem_limit=LAB_MEMORY_LIMIT,
-                memswap_limit=LAB_MEMORY_LIMIT,
-                nano_cpus=LAB_NANO_CPUS,
-                pids_limit=LAB_PIDS_LIMIT,
-                ulimits=[
+                "labels": labels,
+                "mem_limit": LAB_MEMORY_LIMIT,
+                "memswap_limit": LAB_MEMORY_LIMIT,
+                "nano_cpus": LAB_NANO_CPUS,
+                "pids_limit": LAB_PIDS_LIMIT,
+                "ulimits": [
                     Ulimit(
                         name="nproc",
                         soft=LAB_NPROC_LIMIT,
                         hard=LAB_NPROC_LIMIT,
                     )
                 ],
-                read_only=True,
-                cap_drop=["ALL"],
-                security_opt=["no-new-privileges=true"],
-                tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
-                restart_policy={"Name": "no"},
-            )
+                "restart_policy": {"Name": "no"},
+            }
+            if not challenge_id.startswith("custom-"):
+                container_options.update(
+                    {
+                        "user": "10001:10001",
+                        "read_only": True,
+                        "cap_drop": ["ALL"],
+                        "security_opt": ["no-new-privileges=true"],
+                        "tmpfs": {"/tmp": "rw,noexec,nosuid,size=16m"},
+                    }
+                )
+            container = client.containers.create(**container_options)
             container.start()
             deadline = time.monotonic() + LAB_READY_TIMEOUT_SECONDS
             published_port = False
@@ -396,6 +553,7 @@ async def lifespan(manager: FastAPI):
         manager.state.launch_secret = launch_secret
         manager.state.materials_secret = materials_secret
         manager.state.materials = {}
+        manager.state.custom_images = {}
         remove_expired_labs(client)
         ACTIVE_LABS.set(
             sum(
@@ -549,6 +707,37 @@ def metrics() -> Response:
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
+@app.post("/internal/custom-labs/{challenge_id}/build", include_in_schema=False)
+async def build_custom_lab(
+    challenge_id: int,
+    request: Request,
+    flag: Annotated[str, Form(min_length=1, max_length=256)],
+    archive: UploadFile = File(...),
+    secret: Annotated[str | None, Header(alias="X-Lab-Manager-Secret")] = None,
+) -> dict[str, str]:
+    authenticate(secret, request.app.state.launch_secret)
+    if challenge_id < 1:
+        raise HTTPException(status_code=422, detail="Invalid challenge ID")
+    archive_bytes = await archive.read(MAX_CUSTOM_ARCHIVE_BYTES + 1)
+    try:
+        image_ref = await run_in_threadpool(
+            build_custom_image,
+            request.app.state.docker,
+            challenge_id,
+            flag,
+            archive_bytes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except DockerException as exc:
+        logger.exception("Custom lab build or readiness check failed for challenge %s", challenge_id)
+        raise HTTPException(
+            status_code=503,
+            detail="Сборка или проверка лаборатории не прошла. Проверьте Dockerfile, /health и логи lab-manager.",
+        ) from exc
+    return {"image_ref": image_ref, "status": "ready"}
+
+
 @app.put("/internal/materials", include_in_schema=False)
 def update_materials(
     update: MaterialUpdate,
@@ -557,25 +746,51 @@ def update_materials(
 ) -> dict[str, str]:
     authenticate(secret, request.app.state.materials_secret)
     new_materials = dict(update.materials)
+    new_custom_images = dict(update.custom_images)
     with MATERIALS_UPDATE_LOCK:
         with MATERIALS_LOCK:
-            if request.app.state.materials == new_materials:
+            if (
+                request.app.state.materials == new_materials
+                and getattr(request.app.state, "custom_images", {}) == new_custom_images
+            ):
                 return {"status": "updated"}
+        missing_images = []
+        for challenge_key, image_ref in new_custom_images.items():
+            try:
+                request.app.state.docker.images.get(image_ref)
+            except ImageNotFound:
+                missing_images.append(challenge_key)
+        if missing_images:
+            raise HTTPException(
+                status_code=409,
+                detail={"missing_custom_images": missing_images},
+            )
         with LAB_LAUNCH_LOCK:
             with MATERIALS_LOCK:
                 previous_materials = request.app.state.materials
+                previous_custom_images = getattr(request.app.state, "custom_images", {})
                 changed_challenges = {
-                    challenge
-                    for challenge in ALLOWED_MATERIAL_KEYS
-                    if previous_materials.get(challenge) != new_materials.get(challenge)
+                    key
+                    for key in set(previous_materials) | set(new_materials)
+                    if previous_materials.get(key) != new_materials.get(key)
+                    or previous_custom_images.get(key) != new_custom_images.get(key)
                 }
                 request.app.state.materials = new_materials
+                request.app.state.custom_images = new_custom_images
             if changed_challenges:
                 for container in get_managed_containers(request.app.state.docker):
                     challenge = container.labels.get(CHALLENGE_LABEL)
                     if challenge in changed_challenges:
                         remove_lab(request.app.state.docker, container)
                         LAB_MATERIAL_UPDATES.labels(challenge=challenge).inc()
+                retired_images = set(previous_custom_images.values()) - set(new_custom_images.values())
+                for image_ref in retired_images:
+                    try:
+                        request.app.state.docker.images.remove(image_ref)
+                    except ImageNotFound:
+                        pass
+                    except DockerException:
+                        logger.exception("Could not remove retired custom lab image %s", image_ref)
     return {"status": "updated"}
 
 
@@ -587,7 +802,13 @@ def start_lab(
 ) -> dict[str, str]:
     authenticate(secret, request.app.state.launch_secret)
     challenge_id = launch.challenge_id
-    if challenge_id not in CHALLENGE_IMAGES:
+    if challenge_id in CHALLENGE_IMAGES:
+        image_ref = request.app.state.lab_images[challenge_id]
+    elif re.fullmatch(r"custom-[1-9][0-9]*", challenge_id):
+        image_ref = getattr(request.app.state, "custom_images", {}).get(challenge_id)
+        if image_ref is None:
+            raise HTTPException(status_code=400, detail="Challenge has no approved lab image")
+    else:
         raise HTTPException(status_code=400, detail="Challenge has no approved lab image")
     started = time.perf_counter()
     try:
@@ -602,7 +823,7 @@ def start_lab(
                 )
             token, reused = create_lab(
                 request.app.state.docker,
-                request.app.state.lab_images[challenge_id],
+                image_ref,
                 launch.user_id,
                 challenge_id,
                 flag,

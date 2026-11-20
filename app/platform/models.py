@@ -1,6 +1,18 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -39,6 +51,10 @@ class Challenge(Base):
     flag_hash: Mapped[str] = mapped_column(String(64))
     flag_encrypted: Mapped[str | None] = mapped_column(String(512), nullable=True)
     seed_key: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    lab_image_ref: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    lab_build_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    lab_build_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    lab_source_archive: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     is_published: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", index=True)
     resource_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, server_default=func.now())

@@ -105,6 +105,44 @@ tbody tr:last-child td { border-bottom: 0; }
 .form-panel { max-width: 760px; }
 .check-label { display: flex; align-items: center; }
 .danger-zone { border-color: #543440; }
+.admin-create-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.lab-builder { max-width: 1080px; margin: 0 auto; }
+.lab-builder-heading { max-width: 760px; margin-bottom: 30px; }
+.lab-builder-heading h1 { font-size: clamp(2rem, 4vw, 2.8rem); }
+.lab-builder-layout { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(260px, .85fr); align-items: start; gap: 20px; }
+.lab-builder-main { display: grid; gap: 18px; }
+.lab-form-section { margin: 0; padding: clamp(20px, 3vw, 30px); }
+.section-title { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 23px; }
+.section-title h2 { margin: 0 0 5px; font-size: 1.08rem; }
+.section-title p { margin: 0; color: var(--muted); font-size: .86rem; }
+.step-number { display: grid; flex: 0 0 34px; place-items: center; width: 34px; height: 34px; border: 1px solid #356454; border-radius: 10px; background: #102a27; color: var(--accent); font-size: .8rem; font-weight: 800; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; }
+.field-wide { grid-column: 1 / -1; }
+.field-wide small { font-weight: 450; line-height: 1.5; }
+.upload-zone { display: grid; justify-items: center; gap: 8px; padding: 28px 18px; border: 1px dashed #467260; border-radius: 12px; background: rgb(16 42 39 / 38%); color: var(--text); text-align: center; cursor: pointer; }
+.upload-zone:hover, .upload-zone:focus-within { border-color: var(--accent); background: rgb(16 42 39 / 65%); }
+.upload-zone > span:not(.upload-icon) { color: var(--muted); font-size: .82rem; font-weight: 450; }
+.upload-zone input[type="file"] { max-width: 100%; padding: 8px; border: 0; background: transparent; color: var(--muted); font-size: .8rem; }
+.upload-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: #173a32; color: var(--accent); font-size: 1.35rem; }
+.file-selection { margin: 10px 0 0; color: var(--muted); font-size: .82rem; overflow-wrap: anywhere; }
+.lab-builder-aside { position: sticky; top: 20px; margin: 0; padding: 24px; }
+.check-list { display: grid; gap: 19px; margin: 21px 0 25px; padding: 0; list-style: none; }
+.check-list li { display: grid; grid-template-columns: 28px 1fr; gap: 11px; }
+.check-list li > span { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; background: #173a32; color: var(--accent); font-size: .76rem; font-weight: 800; }
+.check-list strong, .check-list small { display: block; }
+.check-list strong { margin: 2px 0 4px; font-size: .86rem; }
+.check-list small { line-height: 1.5; }
+.lab-builder-note { margin: 0 0 20px; font-size: .8rem; line-height: 1.65; overflow-wrap: anywhere; }
+.lab-builder-note code, .build-progress code { color: var(--accent); }
+.dockerfile-example { overflow-x: auto; margin: 0 0 12px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: #080e15; color: #b7d8ce; font-size: .72rem; line-height: 1.7; }
+.build-policy-note { margin: 0 0 19px; font-size: .77rem; line-height: 1.55; }
+.text-link { font-size: .84rem; }
+.lab-build-error { display: block; max-width: 430px; margin-top: 6px; color: #ffb7c0; font-size: .78rem; line-height: 1.5; white-space: normal; }
+.lab-build-button { width: 100%; gap: 12px; }
+.lab-build-button:disabled { cursor: wait; opacity: .7; }
+.build-progress { margin: 0; padding: 14px 16px; border: 1px solid #40506a; border-radius: 9px; background: #101c2a; color: #c9d6e5; font-size: .87rem; line-height: 1.6; }
+.notice p { margin: 7px 0; }
+.notice small { display: block; line-height: 1.5; }
 .footer { display: flex; justify-content: space-between; padding: 22px max(24px, calc((100vw - 1100px) / 2)); border-top: 1px solid #1c2937; color: #77879a; font-size: .8rem; }
 
 @media (max-width: 760px) {
@@ -117,6 +155,11 @@ tbody tr:last-child td { border-bottom: 0; }
     .challenge-toolbar select { width: min(64%, 260px); }
     .challenge-toolbar p { margin: 4px 0 0; }
     .stat-grid { grid-template-columns: 1fr; }
+    .lab-builder-layout { grid-template-columns: 1fr; }
+    .lab-builder-aside { position: static; grid-row: 1; }
+    .form-grid { grid-template-columns: 1fr; }
+    .field-wide { grid-column: auto; }
+    .admin-create-actions { width: 100%; }
     .heading-row { align-items: flex-start; flex-direction: column; margin-bottom: 20px; }
     .auth-card { padding: 24px; }
     th, td { padding: 12px; }

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Новое лабораторное задание · CYBERARENA{% endblock %}
+{% block content %}
+<a class="back-link" href="/admin/challenges">← Все задания</a>
+<section class="lab-builder">
+    <header class="lab-builder-heading">
+        <p class="eyebrow">Конструктор лаборатории</p>
+        <h1>Новое уязвимое задание</h1>
+        <p class="lede">Загрузите приложение и задайте правила задания. Карточка появится для участников только после сборки и двух проверок доступности.</p>
+    </header>
+
+    {% if error %}
+    <div class="notice notice-error" role="alert">
+        <strong>Лаборатория не опубликована.</strong>
+        <p>{{ error }}</p>
+        {% if failed_challenge_id %}<small>Черновик #{{ failed_challenge_id }} сохранён со статусом «Ошибка сборки». Удалите его из списка заданий, если хотите начать заново.</small>{% endif %}
+    </div>
+    {% endif %}
+
+    <form method="post" action="/admin/challenges/lab" enctype="multipart/form-data" class="lab-builder-layout" data-lab-build-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="lab-builder-main">
+            <section class="panel lab-form-section">
+                <div class="section-title"><span class="step-number">01</span><div><h2>Карточка задания</h2><p>Эти данные увидят участники турнира.</p></div></div>
+                <div class="form-grid">
+                    <label class="field-wide">Название<input name="title" maxlength="120" required placeholder="Например, WEB-07 — Неожиданный параметр"></label>
+                    <label>Категория<input name="category" maxlength="40" required placeholder="Web, Pwn, Rev…"></label>
+                    <label>Баллы<input name="points" type="number" min="1" max="100000" required value="200"></label>
+                    <label class="field-wide">Условие<textarea name="description" rows="6" maxlength="10000" required placeholder="Опишите цель и правила задания, не раскрывая путь к флагу."></textarea></label>
+                    <label class="field-wide">Флаг<input name="flag" maxlength="256" required autocomplete="off" placeholder="CTF{...}"><small>Передаётся контейнеру только при запуске личной лаборатории, не встраивается в образ.</small></label>
+                </div>
+            </section>
+
+            <section class="panel lab-form-section">
+                <div class="section-title"><span class="step-number">02</span><div><h2>Исходники приложения</h2><p>Архив tar.gz с Dockerfile в корне.</p></div></div>
+                <label class="upload-zone" for="lab-archive">
+                    <span class="upload-icon" aria-hidden="true">↑</span>
+                    <strong>Выберите архив приложения</strong>
+                    <span>Dockerfile и исходный код · до 2 МиБ в архиве</span>
+                    <input id="lab-archive" name="archive" type="file" accept=".tar.gz,application/gzip" required>
+                </label>
+                <p class="file-selection" data-file-name>Архив не выбран</p>
+            </section>
+
+            <button class="button lab-build-button" type="submit"><span data-submit-label>Собрать, проверить и опубликовать</span><span aria-hidden="true">→</span></button>
+            <p class="build-progress" data-build-status role="status" aria-live="polite" hidden>
+                Платформа соберёт образ по Dockerfile, затем проверит <code>/health</code> напрямую и через Nginx. Сборка может скачивать базовые образы и обращаться в сеть. Не закрывайте страницу.
+            </p>
+        </div>
+
+        <aside class="panel lab-builder-aside">
+            <p class="eyebrow">Проверки перед публикацией</p>
+            <ol class="check-list">
+                <li><span>1</span><div><strong>Безопасный архив</strong><small>Проверяются пути, типы и суммарный размер файлов.</small></div></li>
+                <li><span>2</span><div><strong>Ограниченная сборка</strong><small>Только локальная базовая платформа, без сети и секретов.</small></div></li>
+                <li><span>3</span><div><strong>Личный запуск</strong><small>Контейнер запускается под gVisor с лимитами ресурсов.</small></div></li>
+                <li><span>4</span><div><strong>Проверка через Nginx</strong><small>Публикация только после успешного ответа приложения.</small></div></li>
+            </ol>
+            <div class="notice notice-info lab-builder-note">
+                Приложение должно слушать <code>0.0.0.0:8000</code> и возвращать HTTP 200 по <code>/health</code>. Переменная <code>LAB_CHALLENGE_FLAG</code> передаётся только при запуске лаборатории. Разрешены пользовательские образы и Dockerfile для любых языков.
+            </div>
+            <pre class="dockerfile-example"><code># Python / FastAPI
+FROM cyberarena/lab-base:custom
+WORKDIR /srv/custom
+COPY main.py .
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]</code></pre>
+            <pre class="dockerfile-example"><code># PHP 7.4 (index.php должен обрабатывать /health)
+FROM php:7.4.33-cli-alpine3.16
+WORKDIR /srv/custom
+COPY index.php .
+CMD ["php", "-S", "0.0.0.0:8000", "index.php"]</code></pre>
+            <p class="muted build-policy-note">Разрешены любые базовые образы, стадии сборки и инструкции Dockerfile, в том числе RUN и установка пакетов. Сборка выполняется в DinD под runc, а не под gVisor; загружайте Dockerfile только от доверенных администраторов. Секреты платформы в контекст сборки и переменные сборки не передаются. PHP 7.4 — устаревшая версия для учебных заданий.</p>
+            <a class="text-link" href="/admin/challenges/new">Создать обычное задание без лаборатории</a>
+        </aside>
+    </form>
+</section>
+<script src="/static/admin-lab-builder.js?v=1" defer></script>
+{% endblock %}

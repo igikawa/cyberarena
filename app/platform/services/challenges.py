@@ -17,6 +17,7 @@ from app.platform.services.cache import (
     invalidate_scoreboard_cache,
     set_json_cache,
 )
+from app.platform.services.labs import LAB_CHALLENGE_KEYS
 
 
 def validate_resource_url(url: str | None) -> None:
@@ -53,6 +54,11 @@ async def update_challenge(
     db: AsyncSession, challenge: Challenge, data: ChallengePatch, cache: Redis | None = None
 ) -> Challenge:
     changes = data.model_dump(exclude_unset=True)
+    if changes.get("is_published") is True and challenge.lab_build_status in {"building", "failed"}:
+        raise HTTPException(
+            status_code=409,
+            detail="A custom laboratory must pass its build checks before publication",
+        )
     flag = changes.pop("flag", None)
     if "resource_url" in changes:
         validate_resource_url(changes["resource_url"])
@@ -65,14 +71,7 @@ async def update_challenge(
     await db.refresh(challenge)
     await invalidate_challenges_cache(cache)
     await invalidate_scoreboard_cache(cache)
-    if flag and challenge.seed_key in {
-        "web-01",
-        "web-03-sqli",
-        "web-04-path-traversal",
-        "business-01",
-        "reverse-01",
-        "pwn-01",
-    }:
+    if flag and (challenge.seed_key in LAB_CHALLENGE_KEYS or challenge.lab_image_ref is not None):
         from app.platform.services.task_materials import refresh_lab_flags
 
         await refresh_lab_flags(db)
@@ -94,14 +93,7 @@ async def delete_challenge(
     await db.commit()
     await invalidate_challenges_cache(cache)
     await invalidate_scoreboard_cache(cache)
-    if challenge.seed_key in {
-        "web-01",
-        "web-03-sqli",
-        "web-04-path-traversal",
-        "business-01",
-        "reverse-01",
-        "pwn-01",
-    }:
+    if challenge.seed_key in LAB_CHALLENGE_KEYS or challenge.lab_image_ref is not None:
         from app.platform.services.task_materials import refresh_lab_flags
 
         await refresh_lab_flags(db)

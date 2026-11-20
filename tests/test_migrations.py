@@ -51,3 +51,41 @@ def test_legacy_lab_url_migration_clears_only_known_lab_paths(monkeypatch):
         }
     finally:
         engine.dispose()
+
+
+def test_custom_lab_migration_adds_and_removes_build_state_columns(monkeypatch):
+    migration = importlib.import_module(
+        "migrations.versions.0007_custom_lab_images"
+    )
+    engine = create_engine("sqlite://")
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("CREATE TABLE challenges (id INTEGER PRIMARY KEY)"))
+            monkeypatch.setattr(
+                migration,
+                "op",
+                Operations(MigrationContext.configure(connection)),
+            )
+
+            migration.upgrade()
+
+            columns = {
+                row["name"]: row["type"]
+                for row in connection.execute(text("PRAGMA table_info(challenges)")).mappings()
+            }
+            assert {
+                "lab_image_ref",
+                "lab_build_status",
+                "lab_build_error",
+                "lab_source_archive",
+            } <= set(columns)
+
+            migration.downgrade()
+
+            remaining = {
+                row["name"]
+                for row in connection.execute(text("PRAGMA table_info(challenges)")).mappings()
+            }
+        assert remaining == {"id"}
+    finally:
+        engine.dispose()

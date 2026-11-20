@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import ValidationError
+from starlette.datastructures import UploadFile
 
 from app.platform.core.config import get_settings
 from app.platform.core.security import hash_session_token, new_csrf_token
@@ -39,14 +40,19 @@ from app.platform.services.challenges import (
     update_challenge as update_challenge_record,
     validate_resource_url,
 )
-from app.platform.services.labs import LAB_CHALLENGE_KEYS, start_user_lab
+from app.platform.services.labs import (
+    build_custom_lab,
+    lab_key_for_challenge,
+    start_user_lab,
+)
 from app.platform.services.scoreboard import get_scoreboard
 from app.platform.services.sessions import create_session, delete_session
-from app.platform.services.task_materials import get_seeded_flag
+from app.platform.services.task_materials import get_seeded_flag, refresh_lab_flags
 from app.platform.storage import get_db
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(get_settings().templates_dir))
+MAX_CUSTOM_LAB_ARCHIVE_BYTES = 2 * 1024 * 1024
 
 
 async def render(
@@ -228,7 +234,7 @@ async def challenge_page(
         "challenges/detail.html",
         {
             "challenge": public_challenge(challenge, solved),
-            "has_isolated_lab": challenge.seed_key in LAB_CHALLENGE_KEYS,
+            "has_isolated_lab": lab_key_for_challenge(challenge) is not None,
         },
         db=db,
     )
@@ -246,9 +252,10 @@ async def start_lab_form(
     challenge = await db.get(Challenge, challenge_id)
     if challenge is None or not challenge.is_published:
         raise HTTPException(status_code=404, detail="Challenge not found")
-    if challenge.seed_key not in LAB_CHALLENGE_KEYS:
+    challenge_key = lab_key_for_challenge(challenge)
+    if challenge_key is None:
         raise HTTPException(status_code=400, detail="This challenge has no isolated lab")
-    access_path = await start_user_lab(user.id, challenge.seed_key)
+    access_path = await start_user_lab(user.id, challenge_key)
     return RedirectResponse(access_path, status_code=303)
 
 
@@ -367,6 +374,112 @@ async def admin_challenge_new(request: Request, _: User = Depends(admin_user), d
     return await render(request, "admin/challenges/form.html", {"challenge": None}, db=db)
 
 
+@router.get("/admin/challenges/lab/new", include_in_schema=False)
+async def admin_custom_lab_new(
+    request: Request,
+    _: User = Depends(admin_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    return await render(request, "admin/challenges/lab_form.html", db=db)
+
+
+@router.post(
+    "/admin/challenges/lab",
+    dependencies=[Depends(require_csrf)],
+    include_in_schema=False,
+)
+async def admin_custom_lab_create(
+    request: Request,
+    _: User = Depends(admin_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    form = await request.form()
+    upload = form.get("archive")
+    if not isinstance(upload, UploadFile) or not upload.filename:
+        return await render(
+            request,
+            "admin/challenges/lab_form.html",
+            {"error": "Выберите архив .tar.gz с Dockerfile и исходным кодом."},
+            422,
+            db,
+        )
+    archive = await upload.read(MAX_CUSTOM_LAB_ARCHIVE_BYTES + 1)
+    if len(archive) > MAX_CUSTOM_LAB_ARCHIVE_BYTES:
+        return await render(
+            request,
+            "admin/challenges/lab_form.html",
+            {"error": "Архив исходников не должен превышать 2 МиБ."},
+            413,
+            db,
+        )
+    try:
+        data = ChallengeInput.model_validate(
+            {
+                "title": form.get("title"),
+                "category": form.get("category"),
+                "description": form.get("description"),
+                "points": form.get("points"),
+                "flag": form.get("flag"),
+                "is_published": False,
+            }
+        )
+    except ValidationError:
+        return await render(
+            request,
+            "admin/challenges/lab_form.html",
+            {"error": "Проверьте название, категорию, условие, баллы и флаг."},
+            422,
+            db,
+        )
+
+    challenge = await create_challenge_record(db, data, request.app.state.redis)
+    challenge.lab_build_status = "building"
+    challenge.lab_source_archive = archive
+    await db.commit()
+    try:
+        image_ref = await build_custom_lab(challenge.id, data.flag, archive)
+    except HTTPException as exc:
+        challenge.lab_build_status = "failed"
+        challenge.lab_build_error = exc.detail[:500]
+        await db.commit()
+        return await render(
+            request,
+            "admin/challenges/lab_form.html",
+            {
+                "error": exc.detail,
+                "failed_challenge_id": challenge.id,
+            },
+            503,
+            db,
+        )
+
+    challenge.lab_image_ref = image_ref
+    challenge.lab_build_status = "ready"
+    challenge.lab_build_error = None
+    await db.commit()
+    try:
+        await refresh_lab_flags(db)
+    except HTTPException as exc:
+        challenge.lab_image_ref = None
+        challenge.lab_build_status = "failed"
+        challenge.lab_build_error = exc.detail[:500]
+        await db.commit()
+        return await render(
+            request,
+            "admin/challenges/lab_form.html",
+            {
+                "error": exc.detail,
+                "failed_challenge_id": challenge.id,
+            },
+            503,
+            db,
+        )
+    challenge.is_published = True
+    await db.commit()
+    await invalidate_challenges_cache(request.app.state.redis)
+    return RedirectResponse("/admin/challenges", status_code=303)
+
+
 @router.get("/admin/challenges/{challenge_id}/edit")
 async def admin_challenge_edit(challenge_id: int, request: Request, _: User = Depends(admin_user), db: AsyncSession = Depends(get_db)) -> Response:
     challenge = await db.get(Challenge, challenge_id)
@@ -423,6 +536,17 @@ async def admin_publish_form(
     challenge = await db.get(Challenge, challenge_id)
     if challenge is None:
         raise HTTPException(status_code=404, detail="Challenge not found")
+    if challenge.lab_build_status in {"building", "failed"}:
+        return await render(
+            request,
+            "admin/challenges/list.html",
+            {
+                "error": "Лаборатория не прошла проверку и не может быть опубликована.",
+                "challenges": (await db.scalars(select(Challenge).order_by(Challenge.id.desc()))).all(),
+            },
+            409,
+            db,
+        )
     challenge.is_published = True
     await db.commit()
     await invalidate_challenges_cache(request.app.state.redis)

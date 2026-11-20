@@ -6,7 +6,7 @@ from app.platform.dependencies import current_user, optional_user, require_csrf
 from app.platform.models import Challenge, Solve, User
 from app.platform.schemas import FlagSubmission
 from app.platform.services.challenges import get_published_challenges, submit_flag
-from app.platform.services.labs import LAB_CHALLENGE_KEYS, start_user_lab
+from app.platform.services.labs import lab_key_for_challenge, start_user_lab
 from app.platform.storage import get_db
 
 router = APIRouter()
@@ -74,8 +74,8 @@ async def start_lab_api(
     challenge = await db.get(Challenge, challenge_id)
     if challenge is None or not challenge.is_published:
         raise HTTPException(status_code=404, detail="Challenge not found")
-    challenge_key = challenge.seed_key
-    if challenge_key is None or challenge_key not in LAB_CHALLENGE_KEYS:
+    challenge_key = lab_key_for_challenge(challenge)
+    if challenge_key is None:
         raise HTTPException(status_code=400, detail="This challenge has no isolated lab")
     access_path = await start_user_lab(user.id, challenge_key)
     return {"access_path": access_path}

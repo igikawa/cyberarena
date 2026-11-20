@@ -66,7 +66,11 @@ async def admin_user(user: User = Depends(current_user)) -> User:
 async def require_csrf(request: Request, db: AsyncSession = Depends(get_db)) -> None:
     cookie = request.cookies.get("cyberarena_csrf")
     supplied = request.headers.get("x-csrf-token")
-    if supplied is None and request.headers.get("content-type", "").startswith("application/x-www-form-urlencoded"):
+    content_type = request.headers.get("content-type", "")
+    if supplied is None and (
+        content_type.startswith("application/x-www-form-urlencoded")
+        or content_type.startswith("multipart/form-data")
+    ):
         form = await request.form()
         supplied = str(form.get("csrf_token", ""))
     if not cookie or not supplied or not secrets.compare_digest(cookie, supplied):
